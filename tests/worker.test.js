@@ -6,7 +6,7 @@ import { webcrypto } from "node:crypto";
 import * as core from "../extension/core.js";
 const source = fs
   .readFileSync(new URL("../extension/worker.js", import.meta.url), "utf8")
-  .replace(/^import .*?;\n/, "");
+  .replace(/^import .*?;\r?\n/, "");
 function area(initial = {}) {
   const data = structuredClone(initial);
   return {
