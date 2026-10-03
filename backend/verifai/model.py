@@ -378,7 +378,9 @@ them in unsupported. Reserve unsupported for factual material whose structure or
 format prevents safe extraction. For example, responses "I enjoy tea." and
 "Please reorder the items." each return {"claims": [], "unsupported": []};
 these exclusions are not analysis failures. Preserve entity, date,
-units, uncertainty and context for pronouns. Split separable assertions. Do not split one quantified relationship into a
+units, uncertainty and context for pronouns. Preserve named measurement properties
+such as battery runtime versus useful service lifetime; do not replace either
+with an unspecified duration. Split separable assertions. Do not split one quantified relationship into a
 subject assertion and a numerical qualifier; these form one atomic assertion.
 Different properties of the same subject remain separable: "The object weighs
 2 kg and holds 3 litres" yields "The object weighs 2 kg" and "The object holds
