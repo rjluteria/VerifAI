@@ -177,6 +177,15 @@ class NetworkTests(unittest.TestCase):
                 document("https://example.org/restricted")
             self.assertEqual(mocked.call_count, 1)
 
+    def test_browser_restricted_provider_is_not_admitted_as_proof(self):
+        with patch("verifai.sources.fetch") as mocked:
+            for url in ("https://chegg.com/question", "https://www.chegg.com/question"):
+                with self.assertRaisesRegex(
+                    FetchRejected, "provider-browser-access-restricted"
+                ):
+                    document(url)
+            mocked.assert_not_called()
+
     def test_document_preserves_paragraph_qualification_boundaries(self):
         def response(url, **kwargs):
             if url.endswith("/robots.txt"):

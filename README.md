@@ -67,3 +67,5 @@ Basic native ChatGPT completion, regeneration, edit, SPA conversation creation a
 Agreement between two models can still be wrong. Exact quotations establish provenance, not entailment. A successful source request is not a promise that every user can access the page. See [acceptance status](ACCEPTANCE.md) for measured checks and remaining work. No software license has been selected.
 
 Provider references: [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-apis), [Tavily keyless access](https://docs.tavily.com/documentation/keyless), [Chrome side panel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel), [Render Blueprints](https://render.com/docs/blueprint-spec).
+
+Retesting found Chegg content readable to the service while its page denied access in the user-facing browser. Chegg URLs are conservatively excluded from proof and remain visible as restricted sources. This exclusion does not establish universal browser accessibility for other hosts.

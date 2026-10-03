@@ -49,6 +49,11 @@ class Text(HTMLParser):
 
 def allowed(url):
     origin = urlsplit(url)
+    # Retest reproduced service-readable content but browser-denied Chegg access.
+    # Keep its URLs visible as excluded sources; never admit them as proof.
+    host = (origin.hostname or "").lower().rstrip(".")
+    if host == "chegg.com" or host.endswith(".chegg.com"):
+        raise FetchRejected("provider-browser-access-restricted")
     robots_url = urlunsplit((origin.scheme, origin.netloc, "/robots.txt", "", ""))
     try:
         robots = fetch(robots_url, max_bytes=200000, deadline=10)
