@@ -302,6 +302,34 @@ class EngineTests(unittest.TestCase):
         )
         self.assertEqual(classify(models, "claim", "evidence")["label"], "UNVERIFIED")
 
+    def test_unavailable_decomposition_does_not_replace_valid_evidence_reviewer(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "PARTIALLY_SUPPORTED",
+            "reason": "one missing",
+            "quote_ids": [0],
+        }
+        model.extract = lambda text, names: (
+            ([], ["unavailable"])
+            if names == [model.names[1]]
+            else (
+                [
+                    {"text": "A has 10 branches", "quote": "A has 10 branches"},
+                    {"text": "A has 40 employees", "quote": "40 employees"},
+                ],
+                [],
+            )
+        )
+        row = model.review(
+            model.names[1],
+            "A has 10 branches and 40 employees",
+            "A has 10 branches. Employee count is unknown.",
+        )
+        self.assertEqual(row["model"], model.names[1])
+        self.assertEqual(row["label"], "PARTIALLY_SUPPORTED")
+        self.assertEqual(row["decomposition_model"], "deepseek-ai/deepseek-v4.1-flash")
+        self.assertNotIn("requested_model", row)
+
     def test_reassessment_waits_once_for_observed_reviewer_cooldown(self):
         model = Models()
         model.review = lambda name, *args, **kwargs: {

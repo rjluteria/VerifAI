@@ -71,3 +71,5 @@ Provider references: [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-
 Retesting found Chegg content readable to the service while its page denied access in the user-facing browser. Chegg URLs are conservatively excluded from proof and remain visible as restricted sources. This exclusion does not establish universal browser accessibility for other hosts.
 
 One neutral reassessment waits once for an observed reviewer rate-limit cooldown, bounded to 120 seconds, before requesting the fresh pair. Recovery still requires two distinct actual reviewers and fails closed if unavailable. Fallback diagnostics preserve the failure reason.
+
+For a valid Partial evidence review, unavailable claim decomposition may use the configured standby as a structural extractor. The actual evidence reviewer identity is retained, the parser identity is recorded, and two distinct factual reviewers are still required. This parsing dependency is not an additional independent factual review.

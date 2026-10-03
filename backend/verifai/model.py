@@ -254,6 +254,19 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
             )
             if not invalid and result["label"] == "PARTIALLY_SUPPORTED":
                 assertions, limitations = self.extract(claim, names=[name])
+                decomposition_model = name
+                if limitations:
+                    # Structural parsing is separate from factual evidence review.
+                    # Retain this model's validated review if a different available
+                    # extractor can establish the original claim's atomic structure.
+                    parser_model = os.getenv(
+                        "REVIEW_FALLBACK_MODEL", "deepseek-ai/deepseek-v4.1-flash"
+                    )
+                    if parser_model and parser_model != name:
+                        assertions, limitations = self.extract(
+                            claim, names=[parser_model]
+                        )
+                        decomposition_model = parser_model
                 if limitations:
                     raise ModelError("partial-decomposition-unavailable")
                 if len(assertions) < 2:
@@ -271,6 +284,11 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                         dict.fromkeys(units[i] for i in result["quote_ids"])
                     ),
                     "review_attempts": attempt + 1,
+                    **(
+                        {"decomposition_model": decomposition_model}
+                        if result["label"] == "PARTIALLY_SUPPORTED"
+                        else {}
+                    ),
                 }
             data = {
                 "claim": claim,
