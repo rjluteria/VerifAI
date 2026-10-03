@@ -11,7 +11,7 @@ Requirements: Chrome 120 or newer, Python 3.14, Node 24 or newer, and Docker for
 1. Deploy this directory to Render with `render.yaml`, using the Docker runtime. Configure `NVIDIA_API_KEY`, `TAVILY_API_KEY`, and `ALLOWED_ORIGINS` in the dashboard. The blueprint generates the session secret. Do not put credentials in the extension or repository.
 2. In Chrome's extension manager, enable developer mode and load `extension/` unpacked. Copy its ID into Render's `ALLOWED_ORIGINS` as `chrome-extension://ID`. An exact allowlist is required. Restart the service after updating environment settings.
 3. In VerifAI Settings, enter the exact HTTPS Render service origin and approve access to that origin. Normal extension users never supply a NVIDIA key.
-4. Enable verification in the popup. It starts Off on installation; after first enablement it starts On in new browser sessions. Switching Off lasts until manual enablement or the next browser session.
+4. Enable verification in the popup. It starts Off on installation; after first enablement it starts On in new browser sessions. Switching Off survives worker and extension reloads and lasts until manual enablement or the next browser session.
 
 The service does not automatically load `.env`. `.env.example` documents configuration names. Use deployment environment variables or export them securely in your local shell. Optional `ALLOW_KEYLESS_SEARCH=1` enables Tavily's limited development endpoint; it is off by default and is not a production capacity promise.
 

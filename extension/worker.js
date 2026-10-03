@@ -9,24 +9,32 @@ async function init() {
   await chrome.storage.session.setAccessLevel({
     accessLevel: "TRUSTED_CONTEXTS",
   });
-  const local = await chrome.storage.local.get(["everEnabled"]);
+  const local = await chrome.storage.local.get(["everEnabled", "enabled"]);
   const session = await chrome.storage.session.get("on");
   if (session.on === undefined)
-    await chrome.storage.session.set({ on: Boolean(local.everEnabled) });
+    await chrome.storage.session.set({
+      on:
+        local.enabled === undefined
+          ? Boolean(local.everEnabled)
+          : Boolean(local.enabled),
+    });
 }
 const initialized = init();
 chrome.runtime.onInstalled.addListener(async ({ reason }) => {
   if (reason === "install") {
     await chrome.storage.local.set({
       everEnabled: false,
+      enabled: false,
       historyEnabled: false,
     });
     await chrome.storage.session.set({ on: false });
   }
 });
 chrome.runtime.onStartup.addListener(async () => {
+  await initialized;
   const { everEnabled } = await chrome.storage.local.get("everEnabled");
   await chrome.storage.session.set({ on: Boolean(everEnabled) });
+  await chrome.storage.local.set({ enabled: Boolean(everEnabled) });
 });
 async function active(sender) {
   const tabs = await chrome.tabs.query({
@@ -323,7 +331,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return { error: "sender" };
     if (message.type === "toggle") {
       await chrome.storage.session.set({ on: Boolean(message.on) });
-      if (message.on) await chrome.storage.local.set({ everEnabled: true });
+      await chrome.storage.local.set({
+        enabled: Boolean(message.on),
+        ...(message.on ? { everEnabled: true } : {}),
+      });
       return { ok: true };
     }
     if (message.type === "reverify") {

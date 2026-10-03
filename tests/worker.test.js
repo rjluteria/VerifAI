@@ -401,3 +401,14 @@ test("exhausted capacity retries stop and accurately explain manual recovery", a
   await f.poll();
   assert.equal(f.calls.length, count);
 });
+test("OFF survives cleared session storage on extension reload; browser startup restores prior enablement", async () => {
+  const f = await setup({ local: { everEnabled: true, enabled: false } });
+  assert.equal((await f.send({ type: "state" })).on, false);
+  await f.chrome.runtime.onStartup.listeners[0]();
+  assert.equal((await f.send({ type: "state" })).active, true);
+  const sender = { url: "chrome-extension://test/popup.html" };
+  await f.send({ type: "toggle", on: false }, sender);
+  assert.equal(f.chrome.storage.local.data.enabled, false);
+  const reloaded = await setup({ local: f.chrome.storage.local.data });
+  assert.equal((await reloaded.send({ type: "state" })).on, false);
+});
