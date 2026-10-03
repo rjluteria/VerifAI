@@ -1,13 +1,13 @@
 # Acceptance status
 
-Development build; release acceptance is incomplete. Accuracy hardening measured 80/80 supplied-evidence decisions, 26/26 atomic claims from 24 diverse controlled full-pipeline responses, 25/25 real-source snapshot decisions (citation 4/4; independently discovered 21/21), and 4/4 fresh live claim verdicts. These are bounded measured results, not universal accuracy. The separate semantic and user-browser accessibility audit is recorded in the private hardening report. Final packaging/deployment checks are recorded there; controlled retrieval, source snapshots and fresh live retrieval are distinct scopes.
+Development build; release acceptance is incomplete. Accuracy hardening evaluates supplied-evidence classification, controlled full-pipeline claim verdicts, real-source evidence categories and separate factual/context/browser-access audits. The current frozen corpora contain 56 historic and 25 broad evidence cases. Gold adjudication and preserved failures are documented in `evaluations/GOLD_ADJUDICATION.md`; original expected-label agreement must not be treated as independently established factual accuracy. Consult the final hardening report for measured results and latency; controlled retrieval, source snapshots and fresh live retrieval are distinct scopes.
 
 | Requirement | Implementation / measured status |
 | --- | --- |
 | Four claim statuses; Unverified distinct from false | Engine and UI implemented; local aggregation checks pass |
 | Two evidence tracks and exact snippets | Implemented; exact candidate IDs copied from evidence; separate semantic/context review; inaccessible and incomplete sources cannot establish proof |
-| Citation accessibility | Every supplied citation checked; failures clearly labeled; Python and MDN pages opened in browser; universal user accessibility cannot be guaranteed |
-| Hybrid models and fallback/degraded mode | Configurable NVIDIA reviewers; extraction fallback; actual distinct reviewer identities required; bounded standby and one neutral reassessment; persistent incomplete or disagreeing review abstains; live regressions preserved privately |
+| Citation accessibility | 24 source URLs readable during browser checks; actual NASA citation opened in Chrome; observed Chegg browser restriction excluded from proof; failed citations clearly labeled; universal user accessibility cannot be guaranteed |
+| Hybrid models and fallback/degraded mode | Configurable NVIDIA reviewers; extraction fallback; actual distinct reviewer identities required; bounded standby, separate structural extraction recovery and one neutral reassessment with a bounded cooldown wait; persistent incomplete or disagreeing review abstains; live regressions preserved privately |
 | Numerical grounding | Narrow deterministic operand/source grammar; ambiguous forms remain fallible model decisions, not generally proven arithmetic support |
 | Request-local semantic retrieval | Implemented with lexical fallback; no persisted vectors |
 | Chrome installation and default Off | Loaded unpacked in actual Chrome; default Off observed |
