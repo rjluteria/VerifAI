@@ -49,7 +49,7 @@ def retry_delay(value):
 class Models:
     def __init__(self):
         self.names = [
-            os.getenv("PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
+            os.getenv("PRIMARY_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
             os.getenv("FALLBACK_MODEL", "openai/gpt-oss-20b"),
         ]
         self.key = os.getenv("NVIDIA_API_KEY", "")

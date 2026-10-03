@@ -6,7 +6,7 @@ This is a development build. A Supported result means retrieved evidence support
 
 ## Setup
 
-Requirements: Chrome 120 or newer, Python 3.14, Node 24 or newer, and Docker for container tests. Tooling supports Windows and macOS; actual Windows execution remains pending.
+Requirements: Chrome 120 or newer, Python 3.14, Node 24 or newer, and Docker for container tests. Tooling supports Windows and macOS; Windows, macOS and Linux CI pass; native Windows Chrome acceptance remains pending.
 
 1. Deploy this directory to Render with `render.yaml`, using the Docker runtime. Configure `NVIDIA_API_KEY`, `TAVILY_API_KEY`, and `ALLOWED_ORIGINS` in the dashboard. The blueprint generates the session secret. Do not put credentials in the extension or repository.
 2. In Chrome's extension manager, enable developer mode and load `extension/` unpacked. Copy its ID into Render's `ALLOWED_ORIGINS` as `chrome-extension://ID`. An exact allowlist is required. Restart the service after updating environment settings.
@@ -25,7 +25,7 @@ Local history defaults Off. Enabling it requires 24 hours, 7 days, 30 days or ma
 
 `extension/` contains the site adapter, session worker, popup, side panel and settings. `backend/verifai/` contains extraction, evidence retrieval, request-local ranking, classification, sessions and job handling. `tests/` covers the engine, request boundaries, real local HTTP, extension policy and synthetic DOM lifecycle. The service has no external Python dependencies.
 
-The service extracts atomic claims in bounded paragraph groups, preserving exact response quotes. General discovery uses Tavily with Wikipedia search as a failure fallback. Search summaries are never treated as source evidence. Retrieved text is ranked lexically and optionally with request-local NVIDIA embeddings; vectors are not persisted. Two configured reviewers must agree for a conclusive model verdict. Both must return exact evidence quotations. Deterministic percentage checking accepts only bounded explicit operands and a narrow, unqualified source sentence. Arbitrary numerical prose remains model-reviewed and fallible.
+The service extracts atomic claims in bounded paragraph groups, preserving exact response quotes. General discovery uses Tavily with Wikipedia search as a failure fallback. Search summaries are never treated as source evidence. Retrieved text is ranked lexically and optionally with request-local NVIDIA embeddings; vectors are not persisted. The default NVIDIA-hosted reviewers are `deepseek-ai/deepseek-v4.1-flash` and `openai/gpt-oss-20b`; `PRIMARY_MODEL` and `FALLBACK_MODEL` configure them server-side. Two configured reviewers must agree for a conclusive model verdict. Both must return exact evidence quotations. Deterministic percentage checking accepts only bounded explicit operands and a narrow, unqualified source sentence. Arbitrary numerical prose remains model-reviewed and fallible.
 
 Source retrieval uses public HTTPS only, bounded subprocess DNS resolution, validated IP pinning, TLS hostname verification, redirect revalidation, robots rules and response limits. Unsupported content types, login/challenge responses and inaccessible sources do not become supporting evidence. Accessibility is measured from the service at the recorded time; the user's region, network, browser login and later page changes can differ. Duplicate track membership is preserved without claiming publisher independence.
 
