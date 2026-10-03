@@ -365,3 +365,39 @@ test("SPA conversations bind to the captured response URL despite an older sende
   );
   assert.equal(requests.length, prior);
 });
+test("exhausted capacity retries stop and accurately explain manual recovery", async () => {
+  const key = "response:1:message";
+  const f = await setup({
+    local: { backendUrl: "https://test.onrender.com" },
+    session: {
+      on: true,
+      [key]: {
+        id: "message",
+        tab: 1,
+        url: "https://chatgpt.com/c/test",
+        runId: "run",
+        text: "A synthetic fact.",
+        citations: [],
+        retry: true,
+        attempts: 2,
+        next: 0,
+      },
+    },
+    fetcher: async (url) =>
+      url.endsWith("/v1/session")
+        ? {
+            ok: true,
+            json: async () => ({ token: "test-session", expires_in: 900 }),
+          }
+        : { ok: false, status: 429 },
+  });
+  await f.poll();
+  const saved = f.chrome.storage.session.data[key];
+  assert.equal(saved.attempts, 3);
+  assert.equal(saved.retry, false);
+  assert.match(saved.stage, /Automatic retries exhausted/);
+  assert.doesNotMatch(saved.stage, /will retry/);
+  const count = f.calls.length;
+  await f.poll();
+  assert.equal(f.calls.length, count);
+});

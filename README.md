@@ -19,7 +19,7 @@ The service does not automatically load `.env`. `.env.example` documents configu
 
 Only the active eligible ChatGPT tab is processed. Responses need an identifiable assistant message, a recognized completion control and a stable revision. Unknown layouts fail closed. Each completed result has a View details button. The side panel shows claim statuses, separate ChatGPT Citation and Independent Sources sections, source access status, exact quotations and retrieval timestamps. Links open in new tabs. Re-verify retrieves fresh evidence and replaces the selected result. Opening a panel never starts another verification.
 
-Queued recovery and Re-verify submit only while verification is enabled and the corresponding ChatGPT conversation is active. Changing conversations or turning verification Off pauses queued submissions.
+Queued recovery and Re-verify submit only while verification is enabled and the corresponding ChatGPT conversation is active. Changing conversations or turning verification Off pauses queued submissions. After three failed submissions, automatic retries stop; Re-verify can start another attempt.
 
 Local history defaults Off. Enabling it requires 24 hours, 7 days, 30 days or manual retention. Saved history contains verification results; the raw submitted response is kept only in browser session storage. History is pruned on reads and periodically while Chrome runs. There is no separate history browser; reopen results from their corresponding response. Clearing saved history leaves current-session results available.
 

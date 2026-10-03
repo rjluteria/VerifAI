@@ -104,9 +104,7 @@ async function api(path, options = {}, submission) {
   });
   if (!response.ok) {
     if (response.status === 401) await chrome.storage.session.remove("auth");
-    const error = Error(
-      `Service unavailable (${response.status}); automatic recovery will retry.`,
-    );
+    const error = Error(`Service unavailable (${response.status}).`);
     error.status = response.status;
     throw error;
   }
@@ -173,15 +171,26 @@ async function run(key, value) {
     });
     poll();
   } catch (error) {
+    const attempts = (value.attempts || 0) + (error.paused ? 0 : 1);
+    const recoverable =
+      !error.status ||
+      [401, 408, 429, 500, 502, 503, 504].includes(error.status);
+    const retry = recoverable && attempts < 3;
+    const stage = error.paused
+      ? error.message
+      : error.message +
+        (retry
+          ? " Automatic recovery will retry."
+          : recoverable
+            ? " Automatic retries exhausted; use Re-verify when available."
+            : "");
     await store(
       key,
       {
         ...value,
-        stage: error.message,
-        attempts: (value.attempts || 0) + (error.paused ? 0 : 1),
-        retry:
-          !error.status ||
-          [401, 408, 429, 500, 502, 503, 504].includes(error.status),
+        stage,
+        attempts,
+        retry,
         next: Date.now() + 60000,
       },
       true,
