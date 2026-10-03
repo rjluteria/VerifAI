@@ -142,6 +142,29 @@ class EngineTests(unittest.TestCase):
                 self.assertNotIn("reasoning_effort", payload)
                 self.assertNotIn("chat_template_kwargs", payload)
 
+    def test_invalid_quote_repair_keeps_exact_validation(self):
+        model = Models()
+        outputs = iter(
+            [
+                {"label": "SUPPORTED", "reason": "yes", "quotes": ["paraphrase"]},
+                {"label": "SUPPORTED", "reason": "yes", "quotes": ["A is B."]},
+            ]
+        )
+        model.call = lambda *args: next(outputs)
+        result = model.judge("test", "A is B.", "A is B.")
+        self.assertEqual(result["quotes"], ["A is B."])
+        self.assertEqual(result["review_attempts"], 2)
+
+    def test_repeated_invalid_quote_repair_abstains(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "SUPPORTED",
+            "reason": "yes",
+            "quotes": ["invented"],
+        }
+        with self.assertRaisesRegex(ModelError, "ungrounded-model-output"):
+            model.judge("test", "A is B.", "A is B.")
+
     def test_retry_after(self):
         self.assertEqual(retry_delay("15"), 15)
         self.assertEqual(retry_delay("invalid"), 1)

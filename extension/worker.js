@@ -45,7 +45,22 @@ async function state(sender) {
   const { on } = await chrome.storage.session.get("on");
   return { on: Boolean(on), active: Boolean(on) && (await active(sender)) };
 }
-async function api(path, options = {}) {
+async function submissionActive(value) {
+  await initialized;
+  const { on } = await chrome.storage.session.get("on");
+  if (!on || !eligible(value.url)) return false;
+  const [tab] = await chrome.tabs.query({
+    active: true,
+    lastFocusedWindow: true,
+  });
+  if (tab?.id !== value.tab || !eligible(tab.url)) return false;
+  const current = new URL(tab.url);
+  const original = new URL(value.url);
+  return (
+    current.origin === original.origin && current.pathname === original.pathname
+  );
+}
+async function api(path, options = {}, submission) {
   const { backendUrl } = await chrome.storage.local.get("backendUrl");
   if (!backendUrl) throw Error("Configure the hosted service in Settings.");
   const origin = backend(backendUrl);
@@ -70,6 +85,13 @@ async function api(path, options = {}) {
       origin,
     };
     await chrome.storage.session.set({ auth });
+  }
+  if (submission && !(await submissionActive(submission))) {
+    const error = Error(
+      "Paused; return to the corresponding chat with verification enabled.",
+    );
+    error.paused = true;
+    throw error;
   }
   const response = await fetch(origin + path, {
     ...options,
@@ -126,10 +148,14 @@ async function store(key, value, guarded = false) {
 }
 async function run(key, value) {
   try {
-    const created = await api("/v1/verify", {
-      method: "POST",
-      body: JSON.stringify({ text: value.text, citations: value.citations }),
-    });
+    const created = await api(
+      "/v1/verify",
+      {
+        method: "POST",
+        body: JSON.stringify({ text: value.text, citations: value.citations }),
+      },
+      value,
+    );
     await store(
       key,
       {
@@ -152,7 +178,7 @@ async function run(key, value) {
       {
         ...value,
         stage: error.message,
-        attempts: (value.attempts || 0) + 1,
+        attempts: (value.attempts || 0) + (error.paused ? 0 : 1),
         retry:
           !error.status ||
           [401, 408, 429, 500, 502, 503, 504].includes(error.status),
@@ -174,6 +200,7 @@ async function poll() {
     const data = await chrome.storage.session.get(null);
     for (const [key, value] of Object.entries(data)) {
       if (!key.startsWith("response:") || value.result) continue;
+      if (!(await submissionActive(value))) continue;
       if (value.retry && value.attempts < 3 && Date.now() >= value.next) {
         await run(key, value);
         continue;
@@ -254,6 +281,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           text: message.text,
           citations: message.citations,
           tab: sender.tab.id,
+          url: sender.url,
         });
         return {
           accepted: true,
@@ -267,6 +295,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         text: message.text,
         citations: message.citations,
         tab: sender.tab.id,
+        url: sender.url,
         stage: "Analyzing claims",
       };
       await store(key, value);
@@ -292,6 +321,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const old = (await chrome.storage.session.get(selected || ""))[selected];
       if (!old?.text)
         return { error: "Reopen the corresponding response first." };
+      if (!(await submissionActive(old)))
+        return {
+          error:
+            "Return to the corresponding ChatGPT chat and enable verification.",
+        };
       const value = {
         ...old,
         runId: crypto.randomUUID(),

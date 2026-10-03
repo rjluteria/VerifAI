@@ -40,6 +40,7 @@ async function setup({
   local = {},
   session = {},
   tab = { id: 1, url: "https://chatgpt.com/c/test" },
+  fetcher,
 } = {}) {
   const calls = [];
   const chrome = {
@@ -73,8 +74,9 @@ async function setup({
     console,
     Date,
     Promise,
-    fetch: async () => {
+    fetch: async (...args) => {
       calls.push("fetch");
+      if (fetcher) return fetcher(...args);
       throw Error("test network disabled");
     },
   });
@@ -85,7 +87,12 @@ async function setup({
       chrome.runtime.onMessage.listeners[0](message, sender, resolve),
     );
   }
-  return { chrome, calls, send };
+  return {
+    chrome,
+    calls,
+    send,
+    poll: () => vm.runInContext("poll()", context),
+  };
 }
 test("first session is OFF; later session restores prior enablement", async () => {
   const first = await setup();
@@ -174,5 +181,135 @@ test("valid history restores without verification", async () => {
   assert.equal(
     f.chrome.storage.session.data["response:1:message"].text,
     "A fact.",
+  );
+});
+
+test("queued retries pause while OFF, inactive or on a different conversation", async () => {
+  for (const [on, tab] of [
+    [false, { id: 1, url: "https://chatgpt.com/c/test" }],
+    [true, { id: 2, url: "https://chatgpt.com/c/test" }],
+    [true, { id: 1, url: "https://chatgpt.com/c/other" }],
+    [true, { id: 1, url: "https://example.org/" }],
+  ]) {
+    const value = {
+      id: "message",
+      tab: 1,
+      url: "https://chatgpt.com/c/test",
+      text: "A fact.",
+      retry: true,
+      attempts: 1,
+      next: 0,
+    };
+    const f = await setup({
+      tab,
+      local: { backendUrl: "https://test.onrender.com" },
+      session: { on, "response:1:message": value },
+    });
+    await f.poll();
+    assert.equal(f.calls.length, 0);
+    assert.equal(
+      f.chrome.storage.session.data["response:1:message"].attempts,
+      1,
+    );
+  }
+});
+test("Re-verify preserves a result when its chat is inactive or verification is OFF", async () => {
+  for (const on of [false, true]) {
+    const value = {
+      id: "message",
+      tab: 1,
+      url: "https://chatgpt.com/c/old",
+      text: "A fact.",
+      result: { claims: [] },
+    };
+    const f = await setup({
+      session: {
+        on,
+        selected: "response:1:message",
+        "response:1:message": value,
+      },
+    });
+    const answer = await f.send(
+      { type: "reverify" },
+      { url: "chrome-extension://test/panel.html" },
+    );
+    assert.match(answer.error, /corresponding ChatGPT chat/);
+    assert.ok(f.chrome.storage.session.data["response:1:message"].result);
+    assert.equal(f.calls.length, 0);
+  }
+});
+test("navigation during session creation prevents transmitting response text", async () => {
+  const tab = { id: 1, url: "https://chatgpt.com/c/test" };
+  const requests = [];
+  const f = await setup({
+    tab,
+    local: { backendUrl: "https://test.onrender.com" },
+    session: { on: true },
+    fetcher: async (url, options) => {
+      requests.push({ url, body: options.body });
+      tab.url = "https://chatgpt.com/c/other";
+      return {
+        ok: true,
+        json: async () => ({ token: "test-session", expires_in: 900 }),
+      };
+    },
+  });
+  await f.send({
+    type: "verify",
+    id: "message",
+    revision: "a".repeat(64),
+    text: "A private response.",
+    citations: [],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(requests.length, 1);
+  assert.ok(requests[0].url.endsWith("/v1/session"));
+  assert.equal(requests[0].body, undefined);
+  const saved = f.chrome.storage.session.data["response:1:message"];
+  assert.equal(saved.retry, true);
+  assert.equal(saved.attempts, 0);
+  assert.match(saved.stage, /Paused/);
+});
+test("paused retry resumes only after its chat is active and enabled", async () => {
+  const requests = [];
+  const value = {
+    id: "message",
+    tab: 1,
+    url: "https://chatgpt.com/c/test",
+    text: "A fact.",
+    citations: [],
+    runId: "run",
+    retry: true,
+    attempts: 1,
+    next: 0,
+  };
+  const f = await setup({
+    local: { backendUrl: "https://test.onrender.com" },
+    session: { on: false, "response:1:message": value },
+    fetcher: async (url, options) => {
+      requests.push({ url, options });
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "test-session", expires_in: 900 }
+            : { job: "new-job" },
+      };
+    },
+  });
+  await f.poll();
+  assert.equal(requests.length, 0);
+  f.chrome.storage.session.data.on = true;
+  await f.poll();
+  assert.equal(requests.length, 2);
+  assert.ok(requests[1].url.endsWith("/v1/verify"));
+  assert.equal(JSON.parse(requests[1].options.body).text, "A fact.");
+  assert.equal(
+    requests[1].options.headers["X-VerifAI-Origin"],
+    "chrome-extension://test",
+  );
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].job,
+    "new-job",
   );
 });
