@@ -9,14 +9,11 @@ async function init() {
   await chrome.storage.session.setAccessLevel({
     accessLevel: "TRUSTED_CONTEXTS",
   });
-  const local = await chrome.storage.local.get(["everEnabled", "enabled"]);
+  const local = await chrome.storage.local.get(["enabled"]);
   const session = await chrome.storage.session.get("on");
   if (session.on === undefined)
     await chrome.storage.session.set({
-      on:
-        local.enabled === undefined
-          ? Boolean(local.everEnabled)
-          : Boolean(local.enabled),
+      on: Boolean(local.enabled),
     });
 }
 const initialized = init();

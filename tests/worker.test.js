@@ -94,10 +94,12 @@ async function setup({
     poll: () => vm.runInContext("poll()", context),
   };
 }
-test("first session is OFF; later session restores prior enablement", async () => {
+test("first session is OFF; browser startup restores prior enablement", async () => {
   const first = await setup();
   assert.equal((await first.send({ type: "state" })).on, false);
   const later = await setup({ local: { everEnabled: true } });
+  assert.equal((await later.send({ type: "state" })).on, false);
+  await later.chrome.runtime.onStartup.listeners[0]();
   assert.equal((await later.send({ type: "state" })).active, true);
 });
 test("session OFF persists across worker initialization", async () => {
