@@ -54,6 +54,12 @@ async function render() {
         track === "citation" ? "ChatGPT Citation" : "Independent Sources",
         card,
       );
+      if (track === "independent" && sources.length)
+        element(
+          "p",
+          "These pages were found independently; they may share an original source. Their number does not establish independent corroboration.",
+          card,
+        );
       if (!sources.length)
         element("p", "No evidence available for this track.", card);
       for (const source of sources) {
@@ -71,6 +77,20 @@ async function render() {
           source.label.replaceAll("_", " ") + ": " + source.reason,
           section,
         );
+        if (source.review_reconsidered)
+          element(
+            "p",
+            "Reviewers repeated the assessment because initial reviews disagreed or could not be completed.",
+            section,
+          );
+        if (source.duplicate_of) {
+          element(
+            "p",
+            "Identical retrieved content; not independent corroboration of:",
+            section,
+          );
+          link(source.duplicate_of, section);
+        }
         for (const snippet of source.snippets)
           element("blockquote", snippet.text, section);
         if (source.calculation)

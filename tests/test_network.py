@@ -121,6 +121,26 @@ class NetworkTests(unittest.TestCase):
                     redirects=0,
                 )
 
+    def test_incomplete_or_invalid_advertised_document_rejected(self):
+        for length in ("200", "-1", "not-a-number"):
+            with self.subTest(length=length), self.assertRaises(FetchRejected):
+                fetch(
+                    "https://example.org/a",
+                    resolver=resolver,
+                    connection=connection(
+                        [
+                            Response(
+                                body=b"supporting prefix",
+                                headers={
+                                    "Content-Type": "text/plain",
+                                    "Content-Length": length,
+                                },
+                            )
+                        ],
+                        [],
+                    ),
+                )
+
     def test_watchdog_interrupts_slow_headers(self):
         stopped = threading.Event()
 
@@ -156,6 +176,20 @@ class NetworkTests(unittest.TestCase):
             with self.assertRaises(FetchRejected):
                 document("https://example.org/restricted")
             self.assertEqual(mocked.call_count, 1)
+
+    def test_document_preserves_paragraph_qualification_boundaries(self):
+        def response(url, **kwargs):
+            if url.endswith("/robots.txt"):
+                raise FetchRejected("http-404")
+            return {
+                "body": b"<p>Trial outcome is positive.</p><p>Only adults were studied; children were not included.</p>",
+                "url": url,
+                "content_type": "text/html",
+            }
+
+        with patch("verifai.sources.fetch", side_effect=response):
+            doc = document("https://example.org/trial")
+        self.assertIn("positive.\nOnly adults", doc["text"])
 
     def test_login_wall_not_supporting_evidence(self):
         def response(url, **kwargs):

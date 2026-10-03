@@ -68,22 +68,40 @@ def classify(models, claim, evidence):
     if not evidence.strip():
         return {
             "label": "UNVERIFIED",
-            "reason": "No accessible relevant evidence.",
+            "reason": "No reviewable evidence was selected for this check.",
             "quotes": [],
         }
     assessments, failures = [], []
     for name in models.names:
         try:
-            assessments.append({"model": name, **models.judge(name, claim, evidence)})
+            review = models.review if hasattr(models, "review") else models.judge
+            assessments.append({"model": name, **review(name, claim, evidence)})
         except ModelError as exc:
             failures.append(str(exc))
-    if len(assessments) != 2:
+    initial_reviews = []
+    reconsidered = False
+    if hasattr(models, "reconcile") and (
+        len(assessments) != 2
+        or len({row["model"] for row in assessments}) != 2
+        or len({row["label"] for row in assessments}) != 1
+    ):
+        reconsidered = True
+        initial_reviews = assessments
+        assessments, retry_failures = models.reconcile(claim, evidence)
+        failures.extend(retry_failures)
+    diagnostic = (
+        {"initial_reviews": initial_reviews, "review_reconsidered": True}
+        if reconsidered
+        else {}
+    )
+    if len(assessments) != 2 or len({row["model"] for row in assessments}) != 2:
         return {
             "label": "UNVERIFIED",
             "reason": "Independent evidence review could not be completed.",
             "quotes": [],
             "reviews": assessments,
             "failures": failures,
+            **diagnostic,
         }
     labels = {row["label"] for row in assessments}
     if len(labels) != 1:
@@ -92,6 +110,7 @@ def classify(models, claim, evidence):
             "reason": "Evidence reviewers disagree; no conclusive verdict.",
             "quotes": [],
             "reviews": assessments,
+            **diagnostic,
         }
     quotes = list(dict.fromkeys(q for row in assessments for q in row["quotes"]))
     return {
@@ -99,6 +118,7 @@ def classify(models, claim, evidence):
         "reason": assessments[0]["reason"],
         "quotes": quotes,
         "reviews": assessments,
+        **diagnostic,
     }
 
 
@@ -112,18 +132,32 @@ def passages(text, claim, limit=6):
         "to",
         "in",
     }
-    parts = [text[start : start + 1600] for start in range(0, len(text), 1200)]
+    # Short documents need no selection: preserve all qualifications and corrections.
+    if len(text) <= 12000:
+        return [{"text": text, "start": 0, "end": len(text)}] if text.strip() else []
+    # Never cut a sentence to fit a fixed character window. A large indivisible
+    # sentence is outside this bounded text review rather than incomplete proof.
+    boundaries = [0] + [m.end() for m in re.finditer(r"[.!?](?:\s+|$)|\n+", text)]
+    if boundaries[-1] != len(text):
+        boundaries.append(len(text))
+    parts = []
+    start = 0
+    for left, right in zip(boundaries, boundaries[1:]):
+        if right - left > 8000:
+            return []
+        if right - start > 1600 and left > start:
+            parts.append({"text": text[start:left], "start": start, "end": left})
+            start = left
+    if start < len(text):
+        parts.append({"text": text[start:], "start": start, "end": len(text)})
     ranked = sorted(
-        enumerate(parts),
+        parts,
         key=lambda row: (
-            -len(terms & set(re.findall(r"[a-z0-9]+", row[1].lower()))),
-            row[0],
+            -len(terms & set(re.findall(r"[a-z0-9]+", row["text"].lower()))),
+            row["start"],
         ),
     )[:limit]
-    return [
-        {"text": part, "start": i * 1200, "end": i * 1200 + len(part)}
-        for i, part in sorted(ranked)
-    ]
+    return sorted(ranked, key=lambda row: row["start"])
 
 
 def aggregate(rows):
@@ -196,6 +230,8 @@ class Engine:
             urls = list(dict.fromkeys(citations + found))[:16]
             progress("Verifying evidence")
             tracks = {"citation": [], "independent": []}
+            content_origins = {}
+            reviewed_content = {}
             for url in urls:
                 if time.monotonic() >= deadline:
                     errors.append(
@@ -221,31 +257,35 @@ class Engine:
                         "snippets": [],
                     }
                 else:
-                    selected = self.models.rank(
-                        claim, passages(doc["text"], claim, limit=20)
-                    )
-                    evidence = "\n\n".join(p["text"] for p in selected)
-                    verdict = classify(self.models, claim, evidence)
-                    snippets = []
-                    for quote in verdict["quotes"]:
-                        for p in selected:
-                            offset = p["text"].find(quote)
-                            if offset >= 0:
-                                snippets.append(
-                                    {
-                                        "text": quote,
-                                        "start": p["start"] + offset,
-                                        "end": p["start"] + offset + len(quote),
-                                    }
-                                )
-                                break
-                    if len(snippets) != len(verdict["quotes"]):
-                        verdict = {
-                            "label": "UNVERIFIED",
-                            "reason": "Quotation crossed selected evidence boundaries.",
-                            "quotes": [],
-                        }
+                    if doc["text"] in reviewed_content:
+                        verdict, snippets = reviewed_content[doc["text"]]
+                    else:
+                        selected = self.models.rank(
+                            claim, passages(doc["text"], claim, limit=20)
+                        )
+                        evidence = "\n\n".join(p["text"] for p in selected)
+                        verdict = classify(self.models, claim, evidence)
                         snippets = []
+                        for quote in verdict["quotes"]:
+                            for p in selected:
+                                offset = p["text"].find(quote)
+                                if offset >= 0:
+                                    snippets.append(
+                                        {
+                                            "text": quote,
+                                            "start": p["start"] + offset,
+                                            "end": p["start"] + offset + len(quote),
+                                        }
+                                    )
+                                    break
+                        if len(snippets) != len(verdict["quotes"]):
+                            verdict = {
+                                "label": "UNVERIFIED",
+                                "reason": "Quotation crossed selected evidence boundaries.",
+                                "quotes": [],
+                            }
+                            snippets = []
+                        reviewed_content[doc["text"]] = (verdict, snippets)
                     result = {
                         "url": url,
                         "final_url": doc["url"],
@@ -258,6 +298,15 @@ class Engine:
                         "publisher": urlsplit(doc["url"]).hostname,
                         "scope": "Text evidence; complex tables, images and arbitrary code execution are unsupported.",
                     }
+                    original = content_origins.setdefault(doc["text"], url)
+                    if original != url:
+                        result["duplicate_of"] = original
+                    if verdict.get("review_reconsidered"):
+                        result["review_reconsidered"] = True
+                    if verdict.get("reviews"):
+                        result["review_models"] = [
+                            r["model"] for r in verdict["reviews"]
+                        ]
                     if verdict.get("calculation"):
                         result["calculation"] = True
                 for tag in tags:

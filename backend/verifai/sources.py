@@ -32,13 +32,15 @@ class Text(HTMLParser):
             "h2",
             "h3",
         ):
-            self.parts.append(" ")
+            self.parts.append("\n")
 
     def handle_endtag(self, tag):
         if tag in ("script", "style", "noscript", "template") and self.hidden:
             self.hidden -= 1
         if not self.hidden:
-            self.parts.append(" ")
+            self.parts.append(
+                "\n" if tag in ("p", "div", "li", "tr", "h1", "h2", "h3") else " "
+            )
 
     def handle_data(self, text):
         if not self.hidden:
@@ -66,7 +68,11 @@ def document(url):
     if result["content_type"] == "text/html":
         parser = Text()
         parser.feed(raw)
-        text = " ".join("".join(parser.parts).split())
+        text = "\n".join(
+            " ".join(line.split())
+            for line in "".join(parser.parts).splitlines()
+            if line.strip()
+        )
     else:
         text = " ".join(raw.split())
     if len(text) < 80 or any(
@@ -109,25 +115,34 @@ def discovery(query):
         headers["X-Tavily-Access-Mode"] = "keyless"
     else:
         raise RuntimeError("discovery-unconfigured")
-    req = urllib.request.Request(
-        "https://api.tavily.com/search", data=body, headers=headers
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=20) as response:
-            raw = response.read(500001)
-    except (OSError, ValueError):
-        return encyclopedia(query)
-    if len(raw) > 500000:
-        raise RuntimeError("discovery-size")
-    payload = json.loads(raw)
-    results = payload.get("results", [])
-    return [
-        v["url"]
-        for v in results
-        if isinstance(v, dict)
-        and isinstance(v.get("url"), str)
-        and v["url"].startswith("https://")
-    ][:3]
+    urls = []
+    for search_query in (query, query + " official source"):
+        payload = json.loads(body)
+        payload["query"] = search_query
+        req = urllib.request.Request(
+            "https://api.tavily.com/search",
+            data=json.dumps(payload).encode(),
+            headers=headers,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=20) as response:
+                raw = response.read(500001)
+            if len(raw) > 500000:
+                raise ValueError("discovery-size")
+            results = json.loads(raw).get("results", [])
+            if not isinstance(results, list):
+                raise ValueError("discovery-schema")
+            for row in results[:3]:
+                if (
+                    isinstance(row, dict)
+                    and isinstance(row.get("url"), str)
+                    and row["url"].startswith("https://")
+                    and row["url"] not in urls
+                ):
+                    urls.append(row["url"])
+        except (OSError, ValueError, TypeError, AttributeError):
+            continue
+    return urls or encyclopedia(query)
 
 
 def encyclopedia(query):

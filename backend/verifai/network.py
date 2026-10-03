@@ -153,7 +153,13 @@ def fetch(
             if response.getheader("Content-Encoding", "identity") != "identity":
                 raise FetchRejected("encoded-response")
             length = response.getheader("Content-Length")
-            if length and int(length) > max_bytes:
+            try:
+                expected_size = int(length) if length is not None else None
+            except ValueError:
+                raise FetchRejected("invalid-content-length") from None
+            if expected_size is not None and expected_size < 0:
+                raise FetchRejected("invalid-content-length")
+            if expected_size is not None and expected_size > max_bytes:
                 raise FetchRejected("response-size")
             chunks = []
             size = 0
@@ -170,6 +176,8 @@ def fetch(
                 size += len(block)
                 if size > max_bytes:
                     raise FetchRejected("response-size")
+            if expected_size is not None and size != expected_size:
+                raise FetchRejected("incomplete-response")
             return {
                 "url": url,
                 "body": b"".join(chunks),

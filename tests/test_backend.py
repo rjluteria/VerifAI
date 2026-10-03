@@ -11,11 +11,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from verifai.engine import Engine, aggregate, arithmetic, classify
+from verifai.engine import Engine, aggregate, arithmetic, classify, passages
 from verifai.model import ModelError, Models, retry_delay
 from verifai.network import FetchRejected, destination
 from verifai.server import Service, handler, strict_json, valid_request
-from verifai.sources import Text
+from verifai.sources import Text, discovery
 
 
 class Reviewers:
@@ -39,6 +39,29 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_short_document_keeps_distant_qualification(self):
+        text = (
+            "The medicine is effective. "
+            + "Background. " * 700
+            + "Only adults were studied."
+        )
+        self.assertEqual(
+            passages(text, "The medicine is effective in children."),
+            [{"text": text, "start": 0, "end": len(text)}],
+        )
+
+    def test_passage_boundaries_and_offsets(self):
+        sentence = "A detailed source qualification " + "word " * 350 + "ends here. "
+        text = sentence * 8
+        selected = passages(text, "source qualification", limit=20)
+        self.assertTrue(selected)
+        for row in selected:
+            self.assertEqual(row["text"], text[row["start"] : row["end"]])
+            self.assertTrue(row["text"].endswith("ends here. "))
+
+    def test_oversized_indivisible_evidence_abstains(self):
+        self.assertEqual(passages("word " * 3000, "word"), [])
+
     def test_disagreement_abstains(self):
         self.assertEqual(
             classify(Reviewers(["SUPPORTED", "CONTRADICTED"]), "A is B.", "A is B.")[
@@ -94,20 +117,24 @@ class EngineTests(unittest.TestCase):
         model.call = lambda *args: {
             "label": "SUPPORTED",
             "reason": "yes",
-            "quotes": ["invented"],
+            "quote_ids": [-1],
         }
         with self.assertRaises(ModelError):
             model.judge("test", "a", "b")
 
     def test_no_quote_support_rejected(self):
         model = Models()
-        model.call = lambda *args: {"label": "SUPPORTED", "reason": "yes", "quotes": []}
+        model.call = lambda *args: {
+            "label": "SUPPORTED",
+            "reason": "yes",
+            "quote_ids": [],
+        }
         with self.assertRaises(ModelError):
             model.judge("test", "a", "b")
 
     def test_invalid_label_type_rejected(self):
         model = Models()
-        model.call = lambda *args: {"label": [], "reason": "bad", "quotes": []}
+        model.call = lambda *args: {"label": [], "reason": "bad", "quote_ids": []}
         with self.assertRaises(ModelError):
             model.judge("test", "a", "b")
 
@@ -146,8 +173,8 @@ class EngineTests(unittest.TestCase):
         model = Models()
         outputs = iter(
             [
-                {"label": "SUPPORTED", "reason": "yes", "quotes": ["paraphrase"]},
-                {"label": "SUPPORTED", "reason": "yes", "quotes": ["A is B."]},
+                {"label": "SUPPORTED", "reason": "yes", "quote_ids": [99]},
+                {"label": "SUPPORTED", "reason": "yes", "quote_ids": [0]},
             ]
         )
         model.call = lambda *args: next(outputs)
@@ -160,10 +187,120 @@ class EngineTests(unittest.TestCase):
         model.call = lambda *args: {
             "label": "SUPPORTED",
             "reason": "yes",
-            "quotes": ["invented"],
+            "quote_ids": [-1],
         }
         with self.assertRaisesRegex(ModelError, "ungrounded-model-output"):
             model.judge("test", "A is B.", "A is B.")
+
+    def test_passage_separator_does_not_become_quoted_source_text(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "SUPPORTED",
+            "reason": "direct",
+            "quote_ids": [1],
+        }
+        original_passages = ["Navigation ends.\n", "Ocean covers 71%.\n"]
+        result = model.judge(
+            "test", "Ocean covers 71%.", "\n\n".join(original_passages)
+        )
+        self.assertEqual(result["quotes"], ["Ocean covers 71%."])
+        self.assertTrue(
+            all(any(q in p for p in original_passages) for q in result["quotes"])
+        )
+
+    def test_selected_evidence_keeps_curly_quotes_and_context(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "SUPPORTED",
+            "reason": "direct",
+            "quote_ids": [0, 1],
+        }
+        evidence = "Your “day” is 243 days. This means rotation, not a solar day."
+        result = model.judge("test", "Rotation takes 243 days.", evidence)
+        self.assertEqual(" ".join(result["quotes"]), evidence)
+        for bad in (True, 2, -1, "0"):
+            model.call = lambda *args: {
+                "label": "SUPPORTED",
+                "reason": "direct",
+                "quote_ids": [bad],
+            }
+            with self.subTest(bad=bad), self.assertRaises(ModelError):
+                model.judge("test", "Rotation takes 243 days.", evidence)
+
+    def test_standby_identity_is_distinct_and_visible(self):
+        model = Models()
+
+        def judge(name, *args):
+            if name == model.names[0]:
+                raise ModelError("model-http-429")
+            return {"label": "SUPPORTED", "reason": "direct", "quotes": ["A is B."]}
+
+        model.judge = judge
+        result = classify(model, "A is B.", "A is B.")
+        self.assertEqual(result["label"], "SUPPORTED")
+        self.assertEqual(len({r["model"] for r in result["reviews"]}), 2)
+        self.assertEqual(result["reviews"][0]["requested_model"], model.names[0])
+
+    def test_same_standby_cannot_count_as_two_reviewers(self):
+        model = Models()
+        model.review = lambda *args, **kwargs: {
+            "model": "same-standby",
+            "label": "SUPPORTED",
+            "reason": "direct",
+            "quotes": ["A is B."],
+        }
+        self.assertEqual(classify(model, "A is B.", "A is B.")["label"], "UNVERIFIED")
+
+    def test_atomic_related_fact_cannot_be_partial_support(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "PARTIALLY_SUPPORTED",
+            "reason": "related",
+            "quote_ids": [0],
+        }
+        model.extract = lambda text, **kwargs: ([{"text": text, "quote": text}], [])
+        self.assertEqual(
+            model.judge("test", "Ocean covers 71%.", "Ocean covers 70%.")["label"],
+            "UNVERIFIED",
+        )
+
+    def test_one_bounded_reassessment_preserves_distinct_agreement(self):
+        models = Reviewers(["CONTRADICTED", "PARTIALLY_SUPPORTED"])
+        calls = []
+
+        def reconcile(claim, evidence):
+            calls.append((claim, evidence))
+            return (
+                [
+                    {
+                        "model": n,
+                        "label": "CONTRADICTED",
+                        "reason": "incompatible year",
+                        "quotes": [evidence],
+                    }
+                    for n in models.names
+                ],
+                [],
+            )
+
+        models.reconcile = reconcile
+        result = classify(models, "Bridge opened in 2010.", "Bridge opened in 2011.")
+        self.assertEqual(result["label"], "CONTRADICTED")
+        self.assertEqual(len(calls), 1)
+        self.assertEqual(len(result["initial_reviews"]), 2)
+        models.reconcile = lambda *args: (
+            [
+                {
+                    "model": n,
+                    "label": label,
+                    "reason": "still disagree",
+                    "quotes": ["evidence"],
+                }
+                for n, label in zip(models.names, ["SUPPORTED", "CONTRADICTED"])
+            ],
+            [],
+        )
+        self.assertEqual(classify(models, "claim", "evidence")["label"], "UNVERIFIED")
 
     def test_retry_after(self):
         self.assertEqual(retry_delay("15"), 15)
@@ -196,6 +333,36 @@ class EngineTests(unittest.TestCase):
             "A is B.",
         )
 
+    def test_copied_sources_keep_provenance_without_new_reviews(self):
+        models = Reviewers()
+        calls = []
+        original = models.judge
+
+        def judge(*args):
+            calls.append(args)
+            return original(*args)
+
+        models.judge = judge
+
+        def get(url):
+            return {
+                "url": url,
+                "accessible": True,
+                "text": "A is B.",
+                "checked_at": 1,
+                "sha256": "same",
+            }
+
+        result = Engine(models, get, lambda c: ["https://copy.example/b"]).verify(
+            "A is B.", ["https://original.example/a"]
+        )
+        claim = result["claims"][0]
+        copy = claim["tracks"]["independent"][0]
+        self.assertEqual(copy["duplicate_of"], "https://original.example/a")
+        self.assertEqual(copy["final_url"], "https://copy.example/b")
+        self.assertEqual(copy["snippets"][0]["text"], "A is B.")
+        self.assertEqual(len(calls), 2)
+
     def test_all_sources_fail(self):
         engine = Engine(
             Reviewers(), lambda u: (_ for _ in ()).throw(FetchRejected()), lambda c: []
@@ -217,6 +384,52 @@ class EngineTests(unittest.TestCase):
         result = engine.verify("A is B.", [doc["url"]])
         self.assertEqual(result["claims"][0]["label"], "SUPPORTED")
         self.assertTrue(result["claims"][0]["errors"])
+
+    def test_discovery_expands_query_without_treating_snippets_as_proof(self):
+        responses = [
+            io.BytesIO(
+                json.dumps(
+                    {
+                        "results": [
+                            {
+                                "url": "https://example.org/a",
+                                "content": "Unverified search snippet",
+                            }
+                        ]
+                    }
+                ).encode()
+            ),
+            io.BytesIO(
+                json.dumps(
+                    {
+                        "results": [
+                            {"url": "https://example.org/a"},
+                            {"url": "https://official.example/b"},
+                        ]
+                    }
+                ).encode()
+            ),
+        ]
+        with (
+            patch.dict("os.environ", {"ALLOW_KEYLESS_SEARCH": "1"}),
+            patch(
+                "verifai.sources.urllib.request.urlopen", side_effect=responses
+            ) as calls,
+        ):
+            self.assertEqual(
+                discovery("claim"),
+                ["https://example.org/a", "https://official.example/b"],
+            )
+        queries = [json.loads(call.args[0].data) for call in calls.call_args_list]
+        self.assertEqual(
+            [q["query"] for q in queries], ["claim", "claim official source"]
+        )
+        self.assertTrue(
+            all(
+                not q["include_answer"] and not q["include_raw_content"]
+                for q in queries
+            )
+        )
 
     def test_hidden_html(self):
         parser = Text()
