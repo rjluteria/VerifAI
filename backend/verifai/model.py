@@ -106,6 +106,12 @@ class Models:
         self.key = os.getenv("NVIDIA_API_KEY", "")
 
     def reconcile(self, claim, evidence):
+        # A fresh pair during an observed cooldown would immediately reuse the
+        # same standby twice. Wait once, bounded, before attempting the pair.
+        cooldown = max((_RATE_LIMITED_UNTIL.get(n, 0) for n in self.names), default=0)
+        delay = min(120, max(0, cooldown - time.monotonic()))
+        if delay:
+            time.sleep(delay)
         assessments, failures = [], []
         for name in self.names:
             try:
@@ -125,7 +131,7 @@ class Models:
                     **({"reconsider": True} if reconsider else {}),
                 ),
             }
-        except ModelError:
+        except ModelError as exc:
             standby = os.getenv(
                 "REVIEW_FALLBACK_MODEL", "deepseek-ai/deepseek-v4.1-flash"
             )
@@ -134,6 +140,7 @@ class Models:
             return {
                 "model": standby,
                 "requested_model": name,
+                "fallback_reason": str(exc),
                 **self.judge(
                     standby,
                     claim,

@@ -69,3 +69,5 @@ Agreement between two models can still be wrong. Exact quotations establish prov
 Provider references: [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-apis), [Tavily keyless access](https://docs.tavily.com/documentation/keyless), [Chrome side panel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel), [Render Blueprints](https://render.com/docs/blueprint-spec).
 
 Retesting found Chegg content readable to the service while its page denied access in the user-facing browser. Chegg URLs are conservatively excluded from proof and remain visible as restricted sources. This exclusion does not establish universal browser accessibility for other hosts.
+
+One neutral reassessment waits once for an observed reviewer rate-limit cooldown, bounded to 120 seconds, before requesting the fresh pair. Recovery still requires two distinct actual reviewers and fails closed if unavailable. Fallback diagnostics preserve the failure reason.

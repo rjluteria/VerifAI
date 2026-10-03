@@ -302,6 +302,25 @@ class EngineTests(unittest.TestCase):
         )
         self.assertEqual(classify(models, "claim", "evidence")["label"], "UNVERIFIED")
 
+    def test_reassessment_waits_once_for_observed_reviewer_cooldown(self):
+        model = Models()
+        model.review = lambda name, *args, **kwargs: {
+            "model": name,
+            "label": "SUPPORTED",
+        }
+        with (
+            patch(
+                "verifai.model._RATE_LIMITED_UNTIL",
+                {model.names[0]: 135, model.names[1]: 125},
+            ),
+            patch("verifai.model.time.monotonic", return_value=100),
+            patch("verifai.model.time.sleep") as wait,
+        ):
+            rows, failures = model.reconcile("claim", "evidence")
+            wait.assert_called_once_with(35)
+            self.assertEqual({r["model"] for r in rows}, set(model.names))
+            self.assertEqual(failures, [])
+
     def test_retry_after(self):
         self.assertEqual(retry_delay("15"), 15)
         self.assertEqual(retry_delay("invalid"), 1)
