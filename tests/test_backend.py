@@ -1,3 +1,4 @@
+import io
 import json
 import sys
 import threading
@@ -109,6 +110,37 @@ class EngineTests(unittest.TestCase):
         model.call = lambda *args: {"label": [], "reason": "bad", "quotes": []}
         with self.assertRaises(ModelError):
             model.judge("test", "a", "b")
+
+    def test_model_specific_provider_contract(self):
+        model = Models()
+        model.key = "test-only"
+        for name in ["z-ai/glm-5.3-flash", "openai/gpt-oss-20b"]:
+            response = io.BytesIO(
+                json.dumps(
+                    {
+                        "choices": [
+                            {"finish_reason": "stop", "message": {"content": "{}"}}
+                        ]
+                    }
+                ).encode()
+            )
+            with patch(
+                "verifai.model.urllib.request.urlopen", return_value=response
+            ) as call:
+                self.assertEqual(model.call(name, "instruction", {}), {})
+            request = call.call_args.args[0]
+            payload = json.loads(request.data)
+            self.assertEqual(
+                request.full_url, "https://integrate.api.nvidia.com/v1/chat/completions"
+            )
+            if name == "z-ai/glm-5.3-flash":
+                self.assertEqual(payload["reasoning_effort"], "low")
+                self.assertEqual(
+                    payload["chat_template_kwargs"], {"clear_thinking": True}
+                )
+            else:
+                self.assertNotIn("reasoning_effort", payload)
+                self.assertNotIn("chat_template_kwargs", payload)
 
     def test_retry_after(self):
         self.assertEqual(retry_delay("15"), 15)

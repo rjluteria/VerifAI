@@ -49,7 +49,7 @@ def retry_delay(value):
 class Models:
     def __init__(self):
         self.names = [
-            os.getenv("PRIMARY_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
+            os.getenv("PRIMARY_MODEL", "z-ai/glm-5.3-flash"),
             os.getenv("FALLBACK_MODEL", "openai/gpt-oss-20b"),
         ]
         self.key = os.getenv("NVIDIA_API_KEY", "")
@@ -66,6 +66,9 @@ class Models:
                 {"role": "user", "content": json.dumps(data)},
             ],
         }
+        if model == "z-ai/glm-5.3-flash":
+            payload["reasoning_effort"] = "low"
+            payload["chat_template_kwargs"] = {"clear_thinking": True}
         req = urllib.request.Request(
             "https://integrate.api.nvidia.com/v1/chat/completions",
             data=json.dumps(payload).encode(),
