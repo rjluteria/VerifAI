@@ -255,6 +255,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     if (message.type === "verify") {
       if (
         !(await state(sender)).active ||
+        !(await submissionActive({ tab: sender.tab.id, url: message.url })) ||
         typeof message.text !== "string" ||
         message.text.length > 60000 ||
         !Array.isArray(message.citations) ||
@@ -281,7 +282,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           text: message.text,
           citations: message.citations,
           tab: sender.tab.id,
-          url: sender.url,
+          url: message.url,
         });
         return {
           accepted: true,
@@ -295,7 +296,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         text: message.text,
         citations: message.citations,
         tab: sender.tab.id,
-        url: sender.url,
+        url: message.url,
         stage: "Analyzing claims",
       };
       await store(key, value);

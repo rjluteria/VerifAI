@@ -111,6 +111,7 @@ test("noneligible and inactive senders cannot submit content", async () => {
   const f = await setup({ session: { on: true } });
   const request = {
     type: "verify",
+    url: "https://chatgpt.com/c/test",
     id: "test",
     revision: "a".repeat(64),
     text: "A fact.",
@@ -171,6 +172,7 @@ test("valid history restores without verification", async () => {
   });
   const result = await f.send({
     type: "verify",
+    url: "https://chatgpt.com/c/test",
     id: "message",
     revision: saved.revision,
     text: "A fact.",
@@ -256,6 +258,7 @@ test("navigation during session creation prevents transmitting response text", a
   });
   await f.send({
     type: "verify",
+    url: "https://chatgpt.com/c/test",
     id: "message",
     revision: "a".repeat(64),
     text: "A private response.",
@@ -312,4 +315,53 @@ test("paused retry resumes only after its chat is active and enabled", async () 
     f.chrome.storage.session.data["response:1:message"].job,
     "new-job",
   );
+});
+test("SPA conversations bind to the captured response URL despite an older sender URL", async () => {
+  const requests = [];
+  const f = await setup({
+    local: { backendUrl: "https://test.onrender.com" },
+    session: { on: true },
+    fetcher: async (url, options) => {
+      requests.push({ url, body: options.body });
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "test-session", expires_in: 900 }
+            : url.endsWith("/v1/verify")
+              ? { job: "job" }
+              : { stage: "Verifying evidence" },
+      };
+    },
+  });
+  const request = {
+    type: "verify",
+    url: "https://chatgpt.com/c/test",
+    id: "/c/test:message",
+    revision: "a".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+  };
+  const sender = {
+    tab: { id: 1 },
+    url: "https://chatgpt.com/?temporary-chat=true",
+  };
+  assert.equal((await f.send(request, sender)).accepted, true);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(requests.some((r) => r.url.endsWith("/v1/verify")));
+  assert.equal(
+    f.chrome.storage.session.data["response:1:/c/test:message"].url,
+    request.url,
+  );
+  const prior = requests.length;
+  assert.equal(
+    (await f.send({ ...request, url: "https://chatgpt.com/c/old" }, sender))
+      .error,
+    "ineligible",
+  );
+  assert.equal(
+    (await f.send({ ...request, url: undefined }, sender)).error,
+    "ineligible",
+  );
+  assert.equal(requests.length, prior);
 });

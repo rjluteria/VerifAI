@@ -248,6 +248,7 @@
         return;
       for (const { root, body: content, messageId } of responses()) {
         if (hidden(root) || hidden(content)) continue;
+        const pageUrl = location.href;
         const body = extract(content);
         if (!body.text || body.text.length > 60000) continue;
         const revision = [
@@ -260,15 +261,17 @@
         ]
           .map((x) => x.toString(16).padStart(2, "0"))
           .join("");
+        if (location.href !== pageUrl || !root.isConnected) continue;
         const before = snapshots.get(root);
         if (!before || before.revision !== revision) {
           snapshots.set(root, { revision, at: Date.now() });
           continue;
         }
         if (Date.now() - before.at < 1500 || before.submitted) continue;
-        const id = location.pathname + ":" + messageId;
+        const id = new URL(pageUrl).pathname + ":" + messageId;
         const response = await chrome.runtime.sendMessage({
           type: "verify",
+          url: pageUrl,
           id,
           revision,
           ...body,
