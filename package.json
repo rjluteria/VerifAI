@@ -1,0 +1,18 @@
+{
+  "name": "verifai",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test",
+    "package": "python3 scripts/package.py",
+    "format:check": "prettier --check extension tests/*.js package.json package-lock.json .github/workflows/checks.yml render.yaml"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "devDependencies": {
+    "jsdom": "30.1.1",
+    "prettier": "3.9.9"
+  }
+}

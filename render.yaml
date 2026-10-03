@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: verifai
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeployTrigger: off
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        sync: false
+      - key: PORT
+        value: 8000

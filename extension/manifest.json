@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "VerifAI",
+  "version": "0.1.0",
+  "minimum_chrome_version": "120",
+  "description": "Checks factual claims against cited and independently retrieved evidence.",
+  "permissions": ["storage", "sidePanel", "alarms"],
+  "host_permissions": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+  "optional_host_permissions": ["https://*.onrender.com/*"],
+  "background": { "service_worker": "worker.js", "type": "module" },
+  "content_scripts": [
+    {
+      "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+      "js": ["content.js"]
+    }
+  ],
+  "action": { "default_popup": "popup.html" },
+  "side_panel": { "default_path": "panel.html" },
+  "options_page": "settings.html",
+  "content_security_policy": {
+    "extension_pages": "script-src 'self'; object-src 'none'"
+  }
+}
