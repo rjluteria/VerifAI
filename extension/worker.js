@@ -51,8 +51,12 @@ async function api(path, options = {}) {
   const origin = backend(backendUrl);
   let { auth } = await chrome.storage.session.get("auth");
   if (!auth || auth.expires <= Date.now() || auth.origin !== origin) {
-    const headers =
-      auth?.origin === origin ? { Authorization: "Bearer " + auth.token } : {};
+    const headers = {
+      "X-VerifAI-Origin": chrome.runtime.getURL("").replace(/\/$/, ""),
+      ...(auth?.origin === origin
+        ? { Authorization: "Bearer " + auth.token }
+        : {}),
+    };
     const response = await fetch(origin + "/v1/session", {
       method: "POST",
       headers,
@@ -71,6 +75,7 @@ async function api(path, options = {}) {
     ...options,
     headers: {
       "Content-Type": "application/json",
+      "X-VerifAI-Origin": chrome.runtime.getURL("").replace(/\/$/, ""),
       Authorization: "Bearer " + auth.token,
     },
     signal: AbortSignal.timeout(30000),

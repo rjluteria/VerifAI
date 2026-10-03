@@ -208,7 +208,8 @@ def handler(service):
             self.send_header("Access-Control-Allow-Origin", self.headers["Origin"])
             self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
             self.send_header(
-                "Access-Control-Allow-Headers", "Content-Type, Authorization"
+                "Access-Control-Allow-Headers",
+                "Content-Type, Authorization, X-VerifAI-Origin",
             )
             self.end_headers()
 
@@ -222,8 +223,12 @@ def handler(service):
 
         def route(self, post):
             service.clean()
-            origin = self.headers.get("Origin", "")
-            if origin not in service.origins:
+            browser_origin = self.headers.get("Origin", "")
+            declared_origin = self.headers.get("X-VerifAI-Origin", "")
+            origin = browser_origin or declared_origin
+            if origin not in service.origins or (
+                browser_origin and declared_origin and browser_origin != declared_origin
+            ):
                 return self.reply(403, {"error": "origin"})
             # Proxy headers are intentionally not trusted on an unconfigured network.
             ip = self.client_address[0]

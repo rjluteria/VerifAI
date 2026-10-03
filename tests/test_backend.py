@@ -326,6 +326,28 @@ class HTTPTests(unittest.TestCase):
             self.service.identity(new["token"], "chrome-extension://test"),
         )
 
+    def test_extension_declared_origin_requires_matching_session(self):
+        token = self.service.token("chrome-extension://test")
+
+        def request(origin=None):
+            headers = {
+                "X-VerifAI-Origin": "chrome-extension://test",
+                "Authorization": "Bearer " + token,
+            }
+            if origin:
+                headers["Origin"] = origin
+            req = urllib.request.Request(self.url + "/v1/jobs/missing", headers=headers)
+            try:
+                with urllib.request.urlopen(req) as response:
+                    return response.status
+            except urllib.error.HTTPError as exc:
+                with exc:
+                    return exc.code
+
+        self.assertEqual(request(), 404)
+        self.assertEqual(request("https://evil.example"), 403)
+        self.assertEqual(request("chrome-extension://test"), 404)
+
     def test_malformed_payload(self):
         token = self.service.token("chrome-extension://test")
         self.assertEqual(
