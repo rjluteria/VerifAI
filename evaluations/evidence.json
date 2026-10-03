@@ -148,7 +148,7 @@
   },
   {
     "id": "technology-compound",
-    "claim": "Device A weighs 2 kg and lasts 10 hours.",
+    "claim": "Device A weighs 2 kg and its battery lasts 10 hours.",
     "evidence": "Device A weighs 2 kg. Battery endurance is 6 hours, not 10 hours.",
     "expected": "CONTRADICTED",
     "gold_rationale": "Apply the explicit evidence relationship, preserving every material qualifier; no outside facts are required."
@@ -166,5 +166,12 @@
     "evidence": "The batch may contain traces of peanuts; testing for peanut contamination was not performed.",
     "expected": "UNVERIFIED",
     "gold_rationale": "Apply the explicit evidence relationship, preserving every material qualifier; no outside facts are required."
+  },
+  {
+    "id": "technology-duration-ambiguous",
+    "claim": "Device A lasts 10 hours.",
+    "evidence": "Device A weighs 2 kg. Battery endurance is 6 hours, not 10 hours.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "The duration measure in lasts is unspecified. Battery runtime does not establish overall useful lifetime; without resolving the intended measure, no conclusive relation is established."
   }
 ]
