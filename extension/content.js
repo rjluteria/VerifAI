@@ -175,21 +175,80 @@
     ui.querySelector("[data-verifai-label]").textContent = text;
     current.set(id, { root, revision });
   }
+  function responses() {
+    const found = [
+      ...document.querySelectorAll(
+        '[data-message-author-role="assistant"][data-message-id]',
+      ),
+    ]
+      .filter((root) => {
+        const turn = root.closest("article") || root.parentElement;
+        return turn?.querySelector('[data-testid="copy-turn-action-button"]');
+      })
+      .map((root) => ({ root, body: root, messageId: root.dataset.messageId }));
+    const complete = [
+      ...document.querySelectorAll('[role="status"][aria-live]'),
+    ].some((node) => node.textContent.trim() === "Response complete");
+    if (!complete) return found;
+    for (const root of document.querySelectorAll(
+      "[data-chatgpt-selection-message-id]",
+    )) {
+      const unit = root.closest("[data-content-search-unit-key]");
+      if (
+        !unit?.querySelector(':scope > h4[data-conversation-role="assistant"]')
+      )
+        continue;
+      const bodies = root.querySelectorAll(
+        '[data-markdown-text-style="assistant-message"]',
+      );
+      if (bodies.length !== 1) continue;
+      let turn = root,
+        completed = false;
+      for (
+        let depth = 0;
+        turn && depth <= 5;
+        depth++, turn = turn.parentElement
+      ) {
+        if (
+          turn.querySelectorAll(
+            '[data-markdown-text-style="assistant-message"]',
+          ).length !== 1
+        )
+          break;
+        if (
+          turn.querySelector(
+            '.turn-action-controls button[aria-label="Copy"]:not(:disabled)',
+          )
+        ) {
+          completed = true;
+          break;
+        }
+      }
+      const messageId = root.getAttribute("data-chatgpt-selection-message-id");
+      if (
+        completed &&
+        messageId &&
+        !found.some((item) => item.messageId === messageId)
+      )
+        found.push({ root, body: bodies[0], messageId });
+    }
+    return found;
+  }
   async function scan() {
     if (scanning || document.visibilityState !== "visible") return;
     scanning = true;
     try {
       const state = await chrome.runtime.sendMessage({ type: "state" });
       if (!state.active) return;
-      if (document.querySelector('[data-testid="stop-button"]')) return;
-      for (const root of document.querySelectorAll(
-        '[data-message-author-role="assistant"][data-message-id]',
-      )) {
-        if (hidden(root)) continue;
-        const turn = root.closest("article") || root.parentElement;
-        if (!turn?.querySelector('[data-testid="copy-turn-action-button"]'))
-          continue;
-        const body = extract(root);
+      if (
+        document.querySelector(
+          '[data-testid="stop-button"],button[aria-label="Stop"],button[aria-label="Stop generating"]',
+        )
+      )
+        return;
+      for (const { root, body: content, messageId } of responses()) {
+        if (hidden(root) || hidden(content)) continue;
+        const body = extract(content);
         if (!body.text || body.text.length > 60000) continue;
         const revision = [
           ...new Uint8Array(
@@ -207,7 +266,7 @@
           continue;
         }
         if (Date.now() - before.at < 1500 || before.submitted) continue;
-        const id = location.pathname + ":" + root.dataset.messageId;
+        const id = location.pathname + ":" + messageId;
         const response = await chrome.runtime.sendMessage({
           type: "verify",
           id,

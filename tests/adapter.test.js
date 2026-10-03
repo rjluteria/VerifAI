@@ -9,10 +9,18 @@ const script = fs.readFileSync(
 );
 async function fixture(
   markup,
-  { active = true, stopped = false, completion = true } = {},
+  {
+    active = true,
+    stopped = false,
+    completion = true,
+    modern = false,
+    role = "assistant",
+  } = {},
 ) {
   const page = new JSDOM(
-    `<article>${stopped ? '<button data-testid="stop-button"></button>' : ""}<div data-message-author-role="assistant" data-message-id="message-1">${markup}</div>${completion ? '<button data-testid="copy-turn-action-button"></button>' : ""}</article><div data-message-author-role="user">Secret user content</div>`,
+    modern
+      ? `<div>${stopped ? '<button aria-label="Stop"></button>' : ""}<div data-content-search-unit-key="turn:assistant"><h4 data-conversation-role="${role}">Role heading</h4><div data-chatgpt-selection-message-id="modern-1"><div data-markdown-text-style="assistant-message">${markup}</div></div></div><div data-conversation-role="user">Secret user content</div>${completion ? '<div class="turn-action-controls"><button aria-label="Copy"></button></div>' : ""}</div>${completion ? '<span role="status" aria-live="polite">Response complete</span>' : ""}`
+      : `<article>${stopped ? '<button data-testid="stop-button"></button>' : ""}<div data-message-author-role="assistant" data-message-id="message-1">${markup}</div>${completion ? '<button data-testid="copy-turn-action-button"></button>' : ""}</article><div data-message-author-role="user">Secret user content</div>`,
     {
       url: "https://chatgpt.com/c/test",
       runScripts: "outside-only",
@@ -119,4 +127,29 @@ test("citations inside a table survive structured text conversion", async () => 
     "https://example.org/source",
   ]);
   f.page.window.close();
+});
+
+test("current ChatGPT role and message markers extract only completed assistant content", async () => {
+  const f = await fixture(
+    '<p>A cited fact. <a href="https://example.org/source">Source</a></p>',
+    { modern: true },
+  );
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].text, "A cited fact. Source");
+  assert.equal(f.sent[0].id, "/c/test:modern-1");
+  assert.deepEqual(Array.from(f.sent[0].citations), [
+    "https://example.org/source",
+  ]);
+  f.window.close();
+});
+test("current ChatGPT adapter rejects user role, streaming, and missing completion", async () => {
+  for (const options of [
+    { role: "user" },
+    { stopped: true },
+    { completion: false },
+  ]) {
+    const f = await fixture("<p>A fact.</p>", { modern: true, ...options });
+    assert.equal(f.sent.length, 0);
+    f.window.close();
+  }
 });
