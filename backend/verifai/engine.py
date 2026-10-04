@@ -1,6 +1,8 @@
 import os
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import urlsplit
 
@@ -61,8 +63,56 @@ def arithmetic(claim, evidence):
     return None
 
 
+def bounded_abstention(claim, evidence):
+    # Closed observational-only grammar states absence of causal proof, not
+    # disproof. Additional factual sentences fall outside this guard.
+    if (
+        re.search(r"\b(?:caused|causes|led to|leads to)\b", claim, re.IGNORECASE)
+        and re.fullmatch(
+            r"(?:An|The|This) observational study (?:found|reported|observed) (?:an association|a correlation)\.\s*"
+            r"It (?:cannot|can not|could not) (?:establish|prove|demonstrate) causation\.",
+            evidence.strip(),
+            re.IGNORECASE,
+        )
+        and not re.search(
+            r"\b(?:proved|proven|confirmed|established|demonstrated)\b",
+            claim,
+            re.IGNORECASE,
+        )
+    ):
+        return {
+            "label": "UNVERIFIED",
+            "reason": "Observational association without causal proof does not establish or disprove the claimed effect.",
+            "quotes": [],
+        }
+    # An unqualified device duration does not select battery runtime over useful
+    # lifetime. Directly repeated wording or an explicit claim metric stays in review.
+    duration = re.fullmatch(
+        r"[A-Za-z][A-Za-z0-9 -]{0,100} lasts \d+(?:\.\d+)? (?:hours|days|months|years)\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if (
+        duration
+        and not re.search(r"\b(?:and|or|weighs|contains|costs)\b", claim, re.IGNORECASE)
+        and re.search(r"\b(?:battery|charge|endurance)\b", evidence, re.IGNORECASE)
+        and not re.search(
+            r"\b(?:battery|charge|runtime|endurance|lifetime|lifespan|life)\b",
+            claim,
+            re.IGNORECASE,
+        )
+        and claim.rstrip(".").lower() not in evidence.lower()
+    ):
+        return {
+            "label": "UNVERIFIED",
+            "reason": "The claim does not identify whether duration means battery runtime or useful lifetime; the supplied battery metric cannot resolve it.",
+            "quotes": [],
+        }
+    return None
+
+
 def classify(models, claim, evidence):
-    deterministic = arithmetic(claim, evidence)
+    deterministic = bounded_abstention(claim, evidence) or arithmetic(claim, evidence)
     if deterministic:
         return deterministic
     if not evidence.strip():
@@ -188,9 +238,18 @@ class Engine:
             )
             claims = claims[:60]
         documents = {}
+        # Only this verification owns these query vectors; no cross-job persistence.
+        query_cache = {}
 
         def source(url):
             if url not in documents:
+                if time.monotonic() >= deadline:
+                    documents[url] = {
+                        "url": url,
+                        "accessible": False,
+                        "error": "Source check stopped at the verification time budget.",
+                    }
+                    return documents[url]
                 try:
                     documents[url] = self.fetcher(url)
                 except Exception:
@@ -201,9 +260,20 @@ class Engine:
                     }
             return documents[url]
 
+        def prefetch(urls):
+            pending = [url for url in dict.fromkeys(urls) if url not in documents]
+            if not pending:
+                return
+            # Bound source I/O without changing review order or network policy.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                futures = [
+                    pool.submit(copy_context().run, source, url) for url in pending
+                ]
+                for future in futures:
+                    future.result()
+
         progress("Checking citations")
-        for url in citations:
-            source(url)
+        prefetch(citations)
         output = []
         checked = 0
         check_budget = min(120, max(1, int(os.getenv("MAX_SOURCE_CHECKS", "60"))))
@@ -229,6 +299,7 @@ class Engine:
                 errors.append("Independent discovery unavailable.")
             urls = list(dict.fromkeys(citations + found))[:16]
             progress("Verifying evidence")
+            prefetch(urls[: max(0, check_budget - checked)])
             tracks = {"citation": [], "independent": []}
             content_origins = {}
             reviewed_content = {}
@@ -260,8 +331,12 @@ class Engine:
                     if doc["text"] in reviewed_content:
                         verdict, snippets = reviewed_content[doc["text"]]
                     else:
-                        selected = self.models.rank(
-                            claim, passages(doc["text"], claim, limit=20)
+                        candidates = passages(doc["text"], claim, limit=20)
+                        cached_rank = getattr(self.models, "rank_cached", None)
+                        selected = (
+                            cached_rank(claim, candidates, query_cache)
+                            if cached_rank
+                            else self.models.rank(claim, candidates)
                         )
                         evidence = "\n\n".join(p["text"] for p in selected)
                         verdict = classify(self.models, claim, evidence)

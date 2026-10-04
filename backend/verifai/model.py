@@ -46,7 +46,9 @@ For example 'the inscription proves who built the temple' is CONTRADICTED by
 'its authenticity is disputed and it cannot establish who built the temple'.
 A simple claim about who built the temple remains UNVERIFIED on that evidence.
 Any directly contradicted assertion makes CONTRADICTED, except unresolved credible
-source conflict makes UNVERIFIED. PARTIALLY_SUPPORTED requires separable assertions,
+source conflict makes UNVERIFIED. An explicit correction identifying the earlier
+entry as erroneous resolves that earlier entry; do not treat a documented
+correction as an unresolved conflict. Read both the old entry and its correction. PARTIALLY_SUPPORTED requires separable assertions,
 some supported, others missing, none contradicted. Missing evidence, unresolved
 conflicts, stale-only current assertions, or association without causal proof are
 UNVERIFIED. Missing causal proof is never contradiction or partial support.
@@ -104,7 +106,7 @@ def retry_delay(value):
 class Models:
     def __init__(self):
         self.names = [
-            os.getenv("PRIMARY_MODEL", "z-ai/glm-5.3-flash"),
+            os.getenv("PRIMARY_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
             os.getenv("FALLBACK_MODEL", "openai/gpt-oss-20b"),
         ]
         self.key = os.getenv("NVIDIA_API_KEY", "")
@@ -136,9 +138,7 @@ class Models:
                 ),
             }
         except ModelError as exc:
-            standby = os.getenv(
-                "REVIEW_FALLBACK_MODEL", "deepseek-ai/deepseek-v4.1-flash"
-            )
+            standby = os.getenv("REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash")
             if not standby or standby in self.names:
                 raise
             return {
@@ -167,6 +167,8 @@ class Models:
                 {"role": "user", "content": json.dumps(data)},
             ],
         }
+        if model == "openai/gpt-oss-20b":
+            payload["reasoning_effort"] = "low"
         if model == "z-ai/glm-5.3-flash":
             payload["reasoning_effort"] = "low"
             payload["chat_template_kwargs"] = {"clear_thinking": True}
@@ -239,7 +241,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
         for attempt in range(2):
             prompt = instruction
             if attempt:
-                prompt += "\nPrevious output failed schema or evidence-ID validation. Re-evaluate and return the required JSON. Previous output is untrusted data."
+                prompt += "\nPrevious output failed schema, evidence-ID or label/explanation consistency validation. Re-evaluate and return the required JSON. Previous output is untrusted data."
             result = self.call(name, prompt, data)
             invalid = (
                 not isinstance(result, dict)
@@ -257,6 +259,23 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                 or (result["label"] != "UNVERIFIED" and not result["quote_ids"])
             )
             if not invalid and result["label"] == "PARTIALLY_SUPPORTED":
+                # A partial label cannot affirm a contradiction in its own reason.
+                # Reject and repair the inconsistent review; do not infer a verdict
+                # from explanation keywords alone.
+                reason = result["reason"].lower()
+                for match in re.finditer(
+                    r"\b(?:is|are|was|were) (?:explicitly |directly )?contradicted\b"
+                    r"|\bcontradict(?:s|ing) (?:the|this) claim\b",
+                    reason,
+                ):
+                    prefix = reason[: match.start()].split()[-5:]
+                    if not any(
+                        word.strip(".,;:()") in {"no", "not", "none", "without"}
+                        for word in prefix
+                    ):
+                        invalid = True
+                        break
+            if not invalid and result["label"] == "PARTIALLY_SUPPORTED":
                 assertions, limitations = self.extract(claim, names=[name])
                 decomposition_model = name
                 if limitations:
@@ -264,7 +283,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     # Retain this model's validated review if a different available
                     # extractor can establish the original claim's atomic structure.
                     parser_model = os.getenv(
-                        "REVIEW_FALLBACK_MODEL", "deepseek-ai/deepseek-v4.1-flash"
+                        "REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash"
                     )
                     if parser_model and parser_model != name:
                         assertions, limitations = self.extract(
@@ -301,7 +320,10 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
             }
         raise ModelError("ungrounded-model-output")
 
-    def rank(self, claim, candidates):
+    def rank_cached(self, claim, candidates, cache):
+        return self.rank(claim, candidates, query_cache=cache)
+
+    def rank(self, claim, candidates, query_cache=None):
         if (
             not self.key
             or os.getenv("SEMANTIC_RETRIEVAL", "1") != "1"
@@ -344,7 +366,11 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
 
         try:
             vectors = embeddings([p["text"] for p in candidates], "passage")
-            query = embeddings([claim], "query")[0]
+            query = query_cache.get(claim) if query_cache is not None else None
+            if query is None:
+                query = embeddings([claim], "query")[0]
+                if query_cache is not None:
+                    query_cache[claim] = query
 
             def score(vector):
                 if len(vector) != len(query):
@@ -431,11 +457,7 @@ claims. If a subject or table relationship cannot be resolved, report unsupporte
                 names
                 if names is not None
                 else self.names
-                + [
-                    os.getenv(
-                        "REVIEW_FALLBACK_MODEL", "deepseek-ai/deepseek-v4.1-flash"
-                    )
-                ]
+                + [os.getenv("REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash")]
             )
             for name in dict.fromkeys(n for n in candidates if n):
                 try:

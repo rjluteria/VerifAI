@@ -23,19 +23,20 @@ document
         origins: [origin + "/*"],
       });
       if (!granted) throw Error("Hosted service access was not granted.");
-      await chrome.storage.local.set({
+      const result = await chrome.runtime.sendMessage({
+        type: "saveSettings",
         backendUrl: origin,
         historyEnabled,
         retention,
-        ...(!historyEnabled ? { history: {} } : {}),
       });
-      await chrome.storage.session.remove("auth");
+      if (result.error) throw Error(result.error);
       document.querySelector("#notice").textContent = "Settings saved.";
     } catch (error) {
       document.querySelector("#notice").textContent = error.message;
     }
   });
 document.querySelector("#clear").addEventListener("click", async () => {
-  await chrome.storage.local.set({ history: {} });
-  document.querySelector("#notice").textContent = "Saved history cleared.";
+  const result = await chrome.runtime.sendMessage({ type: "clearHistory" });
+  document.querySelector("#notice").textContent =
+    result.error || "Saved history cleared.";
 });

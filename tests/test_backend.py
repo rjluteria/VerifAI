@@ -39,6 +39,36 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_source_prefetch_is_bounded_and_preserves_url_attribution(self):
+        barrier = threading.Barrier(2)
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def fetch(url):
+            nonlocal active, maximum
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            barrier.wait(timeout=2)
+            with lock:
+                active -= 1
+            return {
+                "url": url,
+                "accessible": True,
+                "text": "A is B.",
+                "checked_at": 1,
+                "sha256": "synthetic",
+            }
+
+        urls = ["https://first.example/", "https://second.example/"]
+        result = Engine(Reviewers(), fetch, lambda claim: []).verify("A is B.", urls)
+        self.assertEqual(maximum, 2)
+        self.assertEqual(
+            [row["url"] for row in result["claims"][0]["tracks"]["citation"]], urls
+        )
+        self.assertEqual(result["claims"][0]["label"], "SUPPORTED")
+
     def test_short_document_keeps_distant_qualification(self):
         text = (
             "The medicine is effective. "
@@ -61,6 +91,97 @@ class EngineTests(unittest.TestCase):
 
     def test_oversized_indivisible_evidence_abstains(self):
         self.assertEqual(passages("word " * 3000, "word"), [])
+
+    def test_observational_absence_and_unspecified_duration_abstain_without_guessed_metrics(
+        self,
+    ):
+        model = Reviewers(["CONTRADICTED", "CONTRADICTED"])
+        result = classify(
+            model,
+            "Exercise caused better recall.",
+            "The observational study reported a correlation. It cannot prove causation.",
+        )
+        self.assertEqual(result["label"], "UNVERIFIED")
+        result = classify(
+            model,
+            "Sensor B lasts 14 days.",
+            "Sensor B weighs 1 kg. Battery endurance is 9 days.",
+        )
+        self.assertEqual(result["label"], "UNVERIFIED")
+        # A direct disproof or a named metric must still reach factual review.
+        self.assertEqual(
+            classify(
+                model,
+                "Exercise caused better recall.",
+                "The observational study reported a correlation. It cannot prove causation. A randomized trial disproved the claimed effect.",
+            )["label"],
+            "CONTRADICTED",
+        )
+        self.assertEqual(
+            classify(
+                model, "Sensor B battery lasts 14 days.", "Battery endurance is 9 days."
+            )["label"],
+            "CONTRADICTED",
+        )
+
+    def test_compound_duration_keeps_other_supported_fact_in_review(self):
+        model = Reviewers(["PARTIALLY_SUPPORTED", "PARTIALLY_SUPPORTED"])
+        self.assertEqual(
+            classify(
+                model,
+                "The device weighs 2 kg and lasts 10 hours.",
+                "The device weighs 2 kg. Battery life has not been measured.",
+            )["label"],
+            "PARTIALLY_SUPPORTED",
+        )
+
+    def test_partial_review_that_affirms_contradiction_is_repaired_without_forcing_label(
+        self,
+    ):
+        model = Models()
+        responses = iter(
+            [
+                {
+                    "label": "PARTIALLY_SUPPORTED",
+                    "reason": "The date is contradicted; the length matches.",
+                    "quote_ids": [0],
+                },
+                {
+                    "label": "CONTRADICTED",
+                    "reason": "The opening date is incompatible.",
+                    "quote_ids": [0],
+                },
+            ]
+        )
+        model.call = lambda *args: next(responses)
+        self.assertEqual(
+            model.judge(
+                "test",
+                "The bridge is 30 m and opened in 2000.",
+                "The bridge is 30 m and opened in 2001.",
+            )["label"],
+            "CONTRADICTED",
+        )
+
+    def test_partial_reason_with_negated_contradiction_remains_valid(self):
+        model = Models()
+        model.call = lambda *args: {
+            "label": "PARTIALLY_SUPPORTED",
+            "reason": "Mass is supported; volume unreported. No assertions are contradicted.",
+            "quote_ids": [0],
+        }
+        model.extract = lambda *args, **kwargs: (
+            [{"text": "The crate weighs 2 kg."}, {"text": "The crate holds 3 litres."}],
+            [],
+        )
+        self.assertEqual(
+            model.judge(
+                "test",
+                "The crate weighs 2 kg and holds 3 litres.",
+                "The crate weighs 2 kg; volume is unknown.",
+            )["label"],
+            "PARTIALLY_SUPPORTED",
+        )
 
     def test_disagreement_abstains(self):
         self.assertEqual(
@@ -166,7 +287,7 @@ class EngineTests(unittest.TestCase):
                     payload["chat_template_kwargs"], {"clear_thinking": True}
                 )
             else:
-                self.assertNotIn("reasoning_effort", payload)
+                self.assertEqual(payload["reasoning_effort"], "low")
                 self.assertNotIn("chat_template_kwargs", payload)
 
     def test_invalid_quote_repair_keeps_exact_validation(self):
@@ -327,7 +448,7 @@ class EngineTests(unittest.TestCase):
         )
         self.assertEqual(row["model"], model.names[1])
         self.assertEqual(row["label"], "PARTIALLY_SUPPORTED")
-        self.assertEqual(row["decomposition_model"], "deepseek-ai/deepseek-v4.1-flash")
+        self.assertEqual(row["decomposition_model"], "z-ai/glm-5.3-flash")
         self.assertNotIn("requested_model", row)
 
     def test_reassessment_waits_once_for_observed_reviewer_cooldown(self):
@@ -497,6 +618,12 @@ class SecurityTests(unittest.TestCase):
             "https://127.0.0.1/",
             "https://169.254.169.254/",
             "https://[::1]/",
+            "https://[fc00::1]/",
+            "https://[fe80::1]/",
+            "https://[::ffff:127.0.0.1]/",
+            "https://0.0.0.0/",
+            "https://100.64.0.1/",
+            "https://192.168.1.1/",
             "https://u:p@example.org/",
             "https://example.org:444/",
             "https://example.org/\nsecret",

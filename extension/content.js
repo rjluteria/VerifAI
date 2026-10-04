@@ -12,6 +12,12 @@
     node.getAttribute("aria-hidden") === "true" ||
     getComputedStyle(node).display === "none" ||
     getComputedStyle(node).visibility === "hidden";
+  function hiddenInPage(node) {
+    for (let current = node; current; current = current.parentElement) {
+      if (hidden(current)) return true;
+    }
+    return false;
+  }
   function extract(root) {
     const clone = root.cloneNode(true);
     const originals = [root, ...root.querySelectorAll("*")],
@@ -166,12 +172,11 @@
       const button = document.createElement("button");
       button.textContent = "View details";
       button.style.marginLeft = "10px";
-      button.addEventListener("click", () =>
-        chrome.runtime.sendMessage({ type: "details", id }),
-      );
       ui.append(label, button);
       root.append(ui);
     }
+    ui.querySelector("button").onclick = () =>
+      chrome.runtime.sendMessage({ type: "details", id });
     ui.querySelector("[data-verifai-label]").textContent = text;
     current.set(id, { root, revision });
   }
@@ -183,16 +188,18 @@
     ]
       .filter((root) => {
         const turn = root.closest("article") || root.parentElement;
-        return turn?.querySelector('[data-testid="copy-turn-action-button"]');
+        return (
+          !hiddenInPage(root) &&
+          turn?.querySelector(
+            '[data-testid="copy-turn-action-button"]:not(:disabled):not([aria-disabled="true"])',
+          )
+        );
       })
       .map((root) => ({ root, body: root, messageId: root.dataset.messageId }));
-    const complete = [
-      ...document.querySelectorAll('[role="status"][aria-live]'),
-    ].some((node) => node.textContent.trim() === "Response complete");
-    if (!complete) return found;
     for (const root of document.querySelectorAll(
       "[data-chatgpt-selection-message-id]",
     )) {
+      if (hiddenInPage(root)) continue;
       const unit = root.closest("[data-content-search-unit-key]");
       if (
         !unit?.querySelector(':scope > h4[data-conversation-role="assistant"]')
@@ -217,7 +224,7 @@
           break;
         if (
           turn.querySelector(
-            '.turn-action-controls button[aria-label="Copy"]:not(:disabled)',
+            '.turn-action-controls button[aria-label="Copy"]:not(:disabled):not([aria-disabled="true"])',
           )
         ) {
           completed = true;
@@ -234,11 +241,26 @@
     }
     return found;
   }
+  async function fingerprint(body) {
+    return [
+      ...new Uint8Array(
+        await crypto.subtle.digest(
+          "SHA-256",
+          new TextEncoder().encode(JSON.stringify(body)),
+        ),
+      ),
+    ]
+      .map((x) => x.toString(16).padStart(2, "0"))
+      .join("");
+  }
   async function scan() {
     if (scanning || document.visibilityState !== "visible") return;
     scanning = true;
     try {
-      const state = await chrome.runtime.sendMessage({ type: "state" });
+      const state = await chrome.runtime.sendMessage({
+        type: "state",
+        poll: true,
+      });
       if (!state.active) return;
       if (
         document.querySelector(
@@ -247,24 +269,23 @@
       )
         return;
       for (const { root, body: content, messageId } of responses()) {
-        if (hidden(root) || hidden(content)) continue;
+        if (hiddenInPage(root) || hiddenInPage(content)) continue;
         const pageUrl = location.href;
         const body = extract(content);
         if (!body.text || body.text.length > 60000) continue;
-        const revision = [
-          ...new Uint8Array(
-            await crypto.subtle.digest(
-              "SHA-256",
-              new TextEncoder().encode(JSON.stringify(body)),
-            ),
-          ),
-        ]
-          .map((x) => x.toString(16).padStart(2, "0"))
-          .join("");
+        const revision = await fingerprint(body);
         if (location.href !== pageUrl || !root.isConnected) continue;
         const before = snapshots.get(root);
-        if (!before || before.revision !== revision) {
-          snapshots.set(root, { revision, at: Date.now() });
+        if (
+          !before ||
+          before.revision !== revision ||
+          before.pageUrl !== pageUrl
+        ) {
+          root.querySelector("[data-verifai]")?.remove();
+          for (const [id, value] of current) {
+            if (value.root === root) current.delete(id);
+          }
+          snapshots.set(root, { revision, pageUrl, at: Date.now() });
           continue;
         }
         if (Date.now() - before.at < 1500 || before.submitted) continue;
@@ -286,11 +307,62 @@
       scanning = false;
     }
   }
-  chrome.runtime.onMessage.addListener((message) => {
+  async function responseEligible(id, revision) {
+    if (
+      document.visibilityState !== "visible" ||
+      document.querySelector(
+        '[data-testid="stop-button"],button[aria-label="Stop"],button[aria-label="Stop generating"]',
+      )
+    )
+      return false;
+    const pageUrl = location.href;
+    const response = responses().find(
+      (value) => id === new URL(pageUrl).pathname + ":" + value.messageId,
+    );
+    if (!response || hidden(response.root) || hidden(response.body))
+      return false;
+    const body = extract(response.body);
+    const actual = await fingerprint(body);
+    return (
+      actual === revision &&
+      location.href === pageUrl &&
+      response.root.isConnected &&
+      JSON.stringify(extract(response.body)) === JSON.stringify(body) &&
+      responses().some(
+        (value) => value.root === response.root && value.body === response.body,
+      )
+    );
+  }
+  chrome.runtime.onMessage.addListener((message, sender, respond) => {
+    if (message.type === "eligible") {
+      responseEligible(message.id, message.revision)
+        .then((eligible) => respond({ eligible }))
+        .catch(() => respond({ eligible: false }));
+      return true;
+    }
     if (message.type !== "result") return;
-    const item = current.get(message.id);
-    if (item?.revision === message.revision && item.root.isConnected)
+    (async () => {
+      const item = current.get(message.id);
+      if (item?.revision !== message.revision || !item.root.isConnected) return;
+      const pageUrl = location.href;
+      const response = responses().find((value) => value.root === item.root);
+      if (
+        !response ||
+        message.id !== new URL(pageUrl).pathname + ":" + response.messageId
+      )
+        return;
+      const body = extract(response.body);
+      const revision = await fingerprint(body);
+      if (JSON.stringify(extract(response.body)) !== JSON.stringify(body))
+        return;
+      if (
+        revision !== message.revision ||
+        location.href !== pageUrl ||
+        !item.root.isConnected
+      )
+        return;
       inline(item.root, message.id, message.revision, message.summary);
+    })().catch(() => {});
   });
   setInterval(scan, 2000);
 })();

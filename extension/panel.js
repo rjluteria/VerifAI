@@ -12,6 +12,14 @@ function link(url, parent) {
     a.href = u.href;
     a.target = "_blank";
     a.rel = "noopener noreferrer";
+    a.addEventListener("click", (event) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      chrome.tabs.create({ url: a.href, active: true }).catch(() => {
+        document.querySelector("#stage").textContent =
+          "The source tab could not be opened. Try the link again.";
+      });
+    });
   } catch {}
 }
 let last = "";
@@ -107,7 +115,7 @@ async function render() {
     }
     for (const error of claim.errors) element("p", error, card);
   }
-  for (const citation of result.citation_access)
+  for (const citation of result.citation_access || [])
     if (!citation.accessible) {
       const p = element("p", "Citation could not be retrieved: ", root);
       link(citation.url, p);

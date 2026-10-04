@@ -6,7 +6,7 @@ import { webcrypto } from "node:crypto";
 import * as core from "../extension/core.js";
 const source = fs
   .readFileSync(new URL("../extension/worker.js", import.meta.url), "utf8")
-  .replace(/^import .*?;\r?\n/, "");
+  .replace(/^import [\s\S]*?;\r?\n/, "");
 function area(initial = {}) {
   const data = structuredClone(initial);
   return {
@@ -41,8 +41,11 @@ async function setup({
   session = {},
   tab = { id: 1, url: "https://chatgpt.com/c/test" },
   fetcher,
+  eligibility = true,
 } = {}) {
   const calls = [];
+  const deliveries = [];
+  const eligibilityChecks = [];
   const chrome = {
     storage: { local: area(local), session: area(session) },
     runtime: {
@@ -55,10 +58,24 @@ async function setup({
       async query() {
         return [tab];
       },
-      async sendMessage() {},
+      async sendMessage(...args) {
+        if (args[1]?.type === "eligible") {
+          eligibilityChecks.push(args);
+          return {
+            eligible:
+              typeof eligibility === "function" ? eligibility() : eligibility,
+          };
+        }
+        deliveries.push(args);
+      },
       onRemoved: event(),
     },
     alarms: { async create() {}, onAlarm: event() },
+    permissions: {
+      async contains() {
+        return true;
+      },
+    },
     sidePanel: {
       async open() {
         calls.push("open");
@@ -71,6 +88,7 @@ async function setup({
     crypto: webcrypto,
     URL,
     AbortSignal,
+    TextEncoder,
     console,
     Date,
     Promise,
@@ -90,8 +108,11 @@ async function setup({
   return {
     chrome,
     calls,
+    deliveries,
+    eligibilityChecks,
     send,
     poll: () => vm.runInContext("poll()", context),
+    store: (...args) => vm.runInContext("store", context)(...args),
   };
 }
 test("first session is OFF; browser startup restores prior enablement", async () => {
@@ -197,6 +218,7 @@ test("queued retries pause while OFF, inactive or on a different conversation", 
   ]) {
     const value = {
       id: "message",
+      revision: "a".repeat(64),
       tab: 1,
       url: "https://chatgpt.com/c/test",
       text: "A fact.",
@@ -221,6 +243,7 @@ test("Re-verify preserves a result when its chat is inactive or verification is 
   for (const on of [false, true]) {
     const value = {
       id: "message",
+      revision: "a".repeat(64),
       tab: 1,
       url: "https://chatgpt.com/c/old",
       text: "A fact.",
@@ -279,6 +302,7 @@ test("paused retry resumes only after its chat is active and enabled", async () 
   const requests = [];
   const value = {
     id: "message",
+    revision: "a".repeat(64),
     tab: 1,
     url: "https://chatgpt.com/c/test",
     text: "A fact.",
@@ -375,6 +399,7 @@ test("exhausted capacity retries stop and accurately explain manual recovery", a
       on: true,
       [key]: {
         id: "message",
+        revision: "a".repeat(64),
         tab: 1,
         url: "https://chatgpt.com/c/test",
         runId: "run",
@@ -413,4 +438,226 @@ test("OFF survives cleared session storage on extension reload; browser startup 
   assert.equal(f.chrome.storage.local.data.enabled, false);
   const reloaded = await setup({ local: f.chrome.storage.local.data });
   assert.equal((await reloaded.send({ type: "state" })).on, false);
+});
+
+test("history cannot enable without retention and content senders cannot change it", async () => {
+  const f = await setup();
+  const request = {
+    type: "saveSettings",
+    backendUrl: "https://verifai-example.onrender.com",
+    historyEnabled: true,
+    retention: "",
+  };
+  assert.equal((await f.send(request)).error, "sender");
+  assert.ok(
+    (await f.send(request, { url: "chrome-extension://test/settings.html" }))
+      .error,
+  );
+  assert.equal(f.chrome.storage.local.data.historyEnabled, undefined);
+});
+test("failed history writes retain current result and accurately describe failed cleanup", async () => {
+  const f = await setup({
+    local: { historyEnabled: true, retention: "manual" },
+  });
+  f.chrome.storage.local.set = async () => {
+    throw Error("write failed");
+  };
+  await f.store("response:1:message", {
+    id: "message",
+    revision: "a".repeat(64),
+    result: { claims: [], unsupported: [] },
+  });
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].result.claims.length,
+    0,
+  );
+  assert.match(
+    f.chrome.storage.session.data.storageNotice,
+    /could not be saved or cleared/,
+  );
+});
+test("settings changes and saves are serialized so disabled history stays empty", async () => {
+  const f = await setup({
+    local: { historyEnabled: true, retention: "manual" },
+  });
+  const save = f.store("response:1:message", {
+    id: "message",
+    revision: "a".repeat(64),
+    result: { claims: [], unsupported: [] },
+  });
+  const disable = f.send(
+    {
+      type: "saveSettings",
+      backendUrl: "https://verifai-example.onrender.com",
+      historyEnabled: false,
+      retention: "manual",
+    },
+    { url: "chrome-extension://test/settings.html" },
+  );
+  await Promise.all([save, disable]);
+  assert.equal(f.chrome.storage.local.data.historyEnabled, false);
+  assert.deepEqual(f.chrome.storage.local.data.history, {});
+});
+
+test("extension settings in a Chrome tab can save, but forged page origins cannot", async () => {
+  const f = await setup();
+  const request = {
+    type: "saveSettings",
+    backendUrl: "https://verifai-example.onrender.com",
+    historyEnabled: false,
+    retention: "",
+  };
+  assert.equal(
+    (
+      await f.send(request, {
+        tab: { id: 3 },
+        url: "chrome-extension://test/settings.html",
+      })
+    ).ok,
+    true,
+  );
+  assert.equal(
+    (
+      await f.send(request, {
+        tab: { id: 3 },
+        url: "chrome-extension://test/settings.html.evil",
+      })
+    ).error,
+    "sender",
+  );
+  assert.equal(
+    (await f.send(request, { tab: { id: 3 }, url: "https://chatgpt.com/" }))
+      .error,
+    "sender",
+  );
+});
+
+test("foreground polling is throttled and delivers honest stage updates", async () => {
+  const value = {
+    id: "message",
+    revision: "a".repeat(64),
+    tab: 1,
+    url: "https://chatgpt.com/c/test",
+    runId: "run",
+    job: "job",
+    stage: "Analyzing claims",
+  };
+  const f = await setup({
+    local: { backendUrl: "https://test.onrender.com" },
+    session: {
+      on: true,
+      auth: {
+        origin: "https://test.onrender.com",
+        token: "test-token",
+        expires: Date.now() + 60000,
+      },
+      "response:1:message": value,
+    },
+    fetcher: async () => ({
+      ok: true,
+      json: async () => ({ stage: "Searching independent sources" }),
+    }),
+  });
+  await f.send({ type: "state", poll: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter((v) => v === "fetch").length, 1);
+  assert.equal(f.deliveries[0][1].summary, "Searching independent sources");
+  await f.send({ type: "state", poll: true });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter((v) => v === "fetch").length, 1);
+});
+test("late result from superseded job cannot overwrite its replacement", async () => {
+  let finish;
+  const pending = new Promise((resolve) => {
+    finish = resolve;
+  });
+  const old = {
+    id: "message",
+    revision: "a".repeat(64),
+    tab: 1,
+    url: "https://chatgpt.com/c/test",
+    runId: "old",
+    job: "old-job",
+    stage: "Verifying evidence",
+  };
+  const f = await setup({
+    local: { backendUrl: "https://test.onrender.com" },
+    session: {
+      on: true,
+      auth: {
+        origin: "https://test.onrender.com",
+        token: "test-token",
+        expires: Date.now() + 60000,
+      },
+      "response:1:message": old,
+    },
+    fetcher: async () => ({ ok: true, json: async () => pending }),
+  });
+  const polled = f.poll();
+  await new Promise((resolve) => setImmediate(resolve));
+  const replacement = {
+    ...old,
+    runId: "new",
+    job: "new-job",
+    revision: "b".repeat(64),
+  };
+  await f.chrome.storage.session.set({ "response:1:message": replacement });
+  finish({ stage: "Complete", result: { claims: [], unsupported: [] } });
+  await polled;
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].job,
+    "new-job",
+  );
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].result,
+    undefined,
+  );
+  assert.equal(f.deliveries.length, 0);
+});
+
+test("branch or response replacement at the same URL prevents queued content transmission", async () => {
+  const f = await setup({
+    eligibility: false,
+    session: { on: true },
+    local: { backendUrl: "https://test.onrender.com" },
+  });
+  await f.send({
+    type: "verify",
+    url: "https://chatgpt.com/c/test",
+    id: "/c/test:message",
+    revision: "a".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(f.eligibilityChecks.length > 0);
+  assert.equal(f.calls.length, 0);
+});
+test("same-URL eligibility is rechecked after session creation before posting response text", async () => {
+  let present = true;
+  const posts = [];
+  const f = await setup({
+    eligibility: () => present,
+    session: { on: true },
+    local: { backendUrl: "https://test.onrender.com" },
+    fetcher: async (url) => {
+      posts.push(url);
+      present = false;
+      return {
+        ok: true,
+        json: async () => ({ token: "synthetic-session", expires_in: 900 }),
+      };
+    },
+  });
+  await f.send({
+    type: "verify",
+    url: "https://chatgpt.com/c/test",
+    id: "/c/test:message",
+    revision: "a".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(posts, ["https://test.onrender.com/v1/session"]);
+  assert.ok(f.eligibilityChecks.length >= 2);
 });

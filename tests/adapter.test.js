@@ -13,13 +13,15 @@ async function fixture(
     active = true,
     stopped = false,
     completion = true,
+    announcement = true,
+    copyDisabled = false,
     modern = false,
     role = "assistant",
   } = {},
 ) {
   const page = new JSDOM(
     modern
-      ? `<div>${stopped ? '<button aria-label="Stop"></button>' : ""}<div data-content-search-unit-key="turn:assistant"><h4 data-conversation-role="${role}">Role heading</h4><div data-chatgpt-selection-message-id="modern-1"><div data-markdown-text-style="assistant-message">${markup}</div></div></div><div data-conversation-role="user">Secret user content</div>${completion ? '<div class="turn-action-controls"><button aria-label="Copy"></button></div>' : ""}</div>${completion ? '<span role="status" aria-live="polite">Response complete</span>' : ""}`
+      ? `<div>${stopped ? '<button aria-label="Stop"></button>' : ""}<div data-content-search-unit-key="turn:assistant"><h4 data-conversation-role="${role}">Role heading</h4><div data-chatgpt-selection-message-id="modern-1"><div data-markdown-text-style="assistant-message">${markup}</div></div></div><div data-conversation-role="user">Secret user content</div>${completion ? `<div class="turn-action-controls"><button aria-label="Copy" ${copyDisabled ? 'aria-disabled="true"' : ""}></button></div>` : ""}</div>${announcement ? '<span role="status" aria-live="polite">Response complete</span>' : ""}`
       : `<article>${stopped ? '<button data-testid="stop-button"></button>' : ""}<div data-message-author-role="assistant" data-message-id="message-1">${markup}</div>${completion ? '<button data-testid="copy-turn-action-button"></button>' : ""}</article><div data-message-author-role="user">Secret user content</div>`,
     {
       url: "https://chatgpt.com/c/test",
@@ -29,7 +31,8 @@ async function fixture(
   );
   const window = page.window;
   let clock = 0,
-    scan;
+    scan,
+    receive;
   const sent = [];
   window.Date.now = () => clock;
   Object.defineProperty(window, "crypto", { value: webcrypto });
@@ -45,14 +48,25 @@ async function fixture(
         sent.push(msg);
         return { accepted: true };
       },
-      onMessage: { addListener: () => {} },
+      onMessage: {
+        addListener: (fn) => {
+          receive = fn;
+        },
+      },
     },
   };
   window.eval(script);
   await scan();
   clock = 2000;
   await scan();
-  return { page, window, sent, scan, setClock: (value) => (clock = value) };
+  return {
+    page,
+    window,
+    sent,
+    scan,
+    receive,
+    setClock: (value) => (clock = value),
+  };
 }
 test("adapter excludes user/hidden/UI text and submits stable completed assistant text", async () => {
   const f = await fixture(
@@ -152,4 +166,129 @@ test("current ChatGPT adapter rejects user role, streaming, and missing completi
     assert.equal(f.sent.length, 0);
     f.window.close();
   }
+});
+
+test("late inline results cannot label replaced text before the next scan", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  const original = f.sent[0];
+  f.window.document.querySelector("p").textContent = "Replacement fact.";
+  f.receive({
+    type: "result",
+    id: original.id,
+    revision: original.revision,
+    summary: "SUPPORTED old response",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.doesNotMatch(
+    f.window.document.querySelector("[data-verifai-label]").textContent,
+    /SUPPORTED old/,
+  );
+  f.window.close();
+});
+test("late results from a different SPA conversation are not rendered", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  const original = f.sent[0];
+  f.window.history.pushState({}, "", "/c/other");
+  f.receive({
+    type: "result",
+    id: original.id,
+    revision: original.revision,
+    summary: "SUPPORTED old conversation",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.doesNotMatch(
+    f.window.document.querySelector("[data-verifai-label]").textContent,
+    /SUPPORTED old/,
+  );
+  f.window.close();
+});
+
+test("response eligibility rejects replaced, streaming, hidden and other-branch content", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  const original = f.sent[0];
+  const eligible = () =>
+    new Promise((resolve) =>
+      f.receive(
+        { type: "eligible", id: original.id, revision: original.revision },
+        {},
+        resolve,
+      ),
+    );
+  assert.equal((await eligible()).eligible, true);
+  f.window.document.querySelector("article").style.display = "none";
+  assert.equal((await eligible()).eligible, false);
+  f.window.document.querySelector("article").style.display = "";
+  const stop = f.window.document.createElement("button");
+  stop.setAttribute("aria-label", "Stop");
+  f.window.document.body.append(stop);
+  assert.equal((await eligible()).eligible, false);
+  stop.remove();
+  f.window.document.querySelector("p").textContent = "Replacement fact.";
+  assert.equal((await eligible()).eligible, false);
+  f.window.document.querySelector("p").textContent = "A fact.";
+  f.window.history.pushState({}, "", "/c/other");
+  assert.equal((await eligible()).eligible, false);
+  f.window.close();
+});
+
+test("refreshed modern responses use persistent completion controls, not transient announcements", async () => {
+  const completed = await fixture("<p>A saved fact.</p>", {
+    modern: true,
+    announcement: false,
+  });
+  assert.equal(completed.sent.length, 1);
+  completed.window.close();
+  for (const options of [
+    { completion: false, announcement: true },
+    { copyDisabled: true, announcement: true },
+  ]) {
+    const incomplete = await fixture("<p>An unfinished fact.</p>", {
+      modern: true,
+      ...options,
+    });
+    assert.equal(incomplete.sent.length, 0);
+    incomplete.window.close();
+  }
+});
+
+test("multiple refreshed responses keep distinct identities and do not borrow completion controls", async () => {
+  const f = await fixture("<p>First fact.</p>", {
+    modern: true,
+    announcement: false,
+  });
+  const second = f.window.document.body.firstElementChild.cloneNode(true);
+  second
+    .querySelector("[data-chatgpt-selection-message-id]")
+    .setAttribute("data-chatgpt-selection-message-id", "modern-2");
+  second.querySelector("p").textContent = "Second fact.";
+  second.querySelector(".turn-action-controls").remove();
+  f.window.document.body.append(second);
+  f.setClock(4000);
+  await f.scan();
+  assert.equal(f.sent.length, 1);
+  const controls = f.window.document.createElement("div");
+  controls.className = "turn-action-controls";
+  controls.innerHTML = '<button aria-label="Copy"></button>';
+  second.append(controls);
+  await f.scan();
+  f.setClock(6000);
+  await f.scan();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[1].id, "/c/test:modern-2");
+  assert.equal(f.sent[1].text, "Second fact.");
+  f.window.close();
+});
+
+test("View details follows current conversation identity when a response node is reused", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  f.window.history.pushState({}, "", "/c/reused-node");
+  f.setClock(4000);
+  await f.scan();
+  assert.equal(f.window.document.querySelector("[data-verifai]"), null);
+  f.setClock(6000);
+  await f.scan();
+  f.window.document.querySelector("[data-verifai] button").click();
+  assert.equal(f.sent.at(-1).type, "details");
+  assert.equal(f.sent.at(-1).id, "/c/reused-node:message-1");
+  f.window.close();
 });

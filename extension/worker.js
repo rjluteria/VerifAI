@@ -1,4 +1,10 @@
-import { eligible, prune, backend, summary } from "./core.js";
+import {
+  eligible,
+  savedHistory,
+  validResult,
+  backend,
+  summary,
+} from "./core.js";
 let queue = Promise.resolve();
 function serialized(action) {
   const task = queue.then(action);
@@ -50,7 +56,7 @@ async function state(sender) {
   const { on } = await chrome.storage.session.get("on");
   return { on: Boolean(on), active: Boolean(on) && (await active(sender)) };
 }
-async function submissionActive(value) {
+async function submissionActive(value, requireResponse = true) {
   await initialized;
   const { on } = await chrome.storage.session.get("on");
   if (!on || !eligible(value.url)) return false;
@@ -61,9 +67,24 @@ async function submissionActive(value) {
   if (tab?.id !== value.tab || !eligible(tab.url)) return false;
   const current = new URL(tab.url);
   const original = new URL(value.url);
-  return (
-    current.origin === original.origin && current.pathname === original.pathname
-  );
+  if (
+    current.origin !== original.origin ||
+    current.pathname !== original.pathname
+  )
+    return false;
+  if (!requireResponse) return true;
+  if (typeof value.id !== "string" || !/^[a-f0-9]{64}$/.test(value.revision))
+    return false;
+  try {
+    const response = await chrome.tabs.sendMessage(value.tab, {
+      type: "eligible",
+      id: value.id,
+      revision: value.revision,
+    });
+    return response?.eligible === true;
+  } catch {
+    return false;
+  }
 }
 async function api(path, options = {}, submission) {
   const { backendUrl } = await chrome.storage.local.get("backendUrl");
@@ -129,28 +150,44 @@ async function store(key, value, guarded = false) {
       "history",
     ]);
     const history = local.historyEnabled
-      ? prune(local.history || {}, local.retention)
+      ? savedHistory(local.history, local.retention)
       : {};
-    if (local.historyEnabled && value.result && local.retention)
+    if (local.historyEnabled && validResult(value.result) && local.retention)
       history[value.id] = {
-        ...value,
-        text: undefined,
-        citations: undefined,
-        job: undefined,
+        id: value.id,
+        revision: value.revision,
+        result: value.result,
+        stage: "Complete",
         savedAt: Date.now(),
+        version: 1,
       };
     try {
-      await chrome.storage.local.set({ history });
+      await chrome.storage.local.set({
+        history: savedHistory(history, local.retention),
+      });
     } catch {
-      await chrome.storage.local.set({ history: {} });
+      let cleared = false;
+      try {
+        await chrome.storage.local.set({ history: {} });
+        cleared = true;
+      } catch {}
       await chrome.storage.session.set({
-        storageNotice: "History storage was full; saved history was cleared.",
+        storageNotice: cleared
+          ? "History could not be saved; saved history was cleared."
+          : "History could not be saved or cleared. Check Settings and try again.",
       });
     }
   });
 }
 async function run(key, value) {
   try {
+    if (!(await submissionActive(value))) {
+      const error = Error(
+        "Paused; return to the corresponding chat with verification enabled.",
+      );
+      error.paused = true;
+      throw error;
+    }
     const created = await api(
       "/v1/verify",
       {
@@ -207,6 +244,7 @@ async function run(key, value) {
   }
 }
 let polling = false;
+let lastForegroundPoll = 0;
 async function poll() {
   if (polling) return;
   polling = true;
@@ -224,14 +262,26 @@ async function poll() {
         const job = await api("/v1/jobs/" + encodeURIComponent(value.job));
         const current = (await chrome.storage.session.get(key))[key];
         if (current?.job !== value.job) continue;
+        if (job.result && !validResult(job.result)) {
+          await store(
+            key,
+            {
+              ...current,
+              stage: "Failed",
+              error: "Invalid verification data; use Re-verify.",
+            },
+            true,
+          );
+          continue;
+        }
         await store(key, { ...current, ...job }, true);
-        if (job.result) {
+        if (job.result || job.stage) {
           try {
             await chrome.tabs.sendMessage(value.tab, {
               type: "result",
               id: value.id,
               revision: value.revision,
-              summary: summary(job.result),
+              summary: job.result ? summary(job.result) : job.stage,
             });
           } catch {}
         }
@@ -265,11 +315,25 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     chrome.sidePanel.open({ windowId: sender.tab.windowId }).catch(() => {});
   }
   (async () => {
-    if (message.type === "state") return state(sender);
+    if (message.type === "state") {
+      const current = await state(sender);
+      if (
+        current.active &&
+        message.poll === true &&
+        Date.now() - lastForegroundPoll >= 5000
+      ) {
+        lastForegroundPoll = Date.now();
+        poll().catch(() => {});
+      }
+      return current;
+    }
     if (message.type === "verify") {
       if (
         !(await state(sender)).active ||
-        !(await submissionActive({ tab: sender.tab.id, url: message.url })) ||
+        !(await submissionActive(
+          { tab: sender.tab.id, url: message.url },
+          false,
+        )) ||
         typeof message.text !== "string" ||
         message.text.length > 60000 ||
         !Array.isArray(message.citations) ||
@@ -286,7 +350,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         "retention",
       ]);
       const history = local.historyEnabled
-        ? prune(local.history || {}, local.retention)
+        ? savedHistory(local.history, local.retention)
         : {};
       const old =
         (await chrome.storage.session.get(key))[key] || history[message.id];
@@ -324,8 +388,40 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       });
       return { ok: true };
     }
-    if (sender.tab || !sender.url?.startsWith(chrome.runtime.getURL("")))
+    if (
+      !["popup.html", "settings.html", "panel.html"].some(
+        (path) => sender.url === chrome.runtime.getURL(path),
+      )
+    )
       return { error: "sender" };
+    if (message.type === "saveSettings") {
+      const origin = backend(message.backendUrl);
+      if (
+        typeof message.historyEnabled !== "boolean" ||
+        !["", "24h", "7d", "30d", "manual"].includes(message.retention) ||
+        (message.historyEnabled && !message.retention)
+      )
+        return { error: "Choose a valid retention period first." };
+      if (!(await chrome.permissions.contains({ origins: [origin + "/*"] })))
+        return { error: "Hosted service access was not granted." };
+      await serialized(async () => {
+        const local = await chrome.storage.local.get("history");
+        await chrome.storage.local.set({
+          backendUrl: origin,
+          historyEnabled: message.historyEnabled,
+          retention: message.retention,
+          history: message.historyEnabled
+            ? savedHistory(local.history, message.retention)
+            : {},
+        });
+        await chrome.storage.session.remove("auth");
+      });
+      return { ok: true };
+    }
+    if (message.type === "clearHistory") {
+      await serialized(() => chrome.storage.local.set({ history: {} }));
+      return { ok: true };
+    }
     if (message.type === "toggle") {
       await chrome.storage.session.set({ on: Boolean(message.on) });
       await chrome.storage.local.set({
@@ -370,10 +466,15 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
 chrome.alarms.create("cleanup", { periodInMinutes: 30 });
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name !== "cleanup") return;
-  const { history, historyEnabled, retention } = await chrome.storage.local.get(
-    ["history", "historyEnabled", "retention"],
-  );
-  await chrome.storage.local.set({
-    history: historyEnabled ? prune(history || {}, retention) : {},
+  await serialized(async () => {
+    const { history, historyEnabled, retention } =
+      await chrome.storage.local.get([
+        "history",
+        "historyEnabled",
+        "retention",
+      ]);
+    await chrome.storage.local.set({
+      history: historyEnabled ? savedHistory(history, retention) : {},
+    });
   });
 });

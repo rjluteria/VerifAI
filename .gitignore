@@ -1,4 +1,7 @@
 .env
+.env.*
+!.env.example
+*-run.json
 __pycache__/
 *.pyc
 dist/
