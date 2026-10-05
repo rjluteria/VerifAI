@@ -583,6 +583,96 @@ class EngineTests(unittest.TestCase):
         )
         self.assertEqual(classify(models, "claim", "evidence")["label"], "UNVERIFIED")
 
+    def test_incomplete_reassessment_retains_matching_distinct_valid_initial_review(
+        self,
+    ):
+        class Recovering:
+            names = ["first", "second"]
+
+            def review(self, name, claim, evidence):
+                if name == "second":
+                    raise ModelError("model-unavailable")
+                return {
+                    "model": name,
+                    "label": "PARTIALLY_SUPPORTED",
+                    "reason": "One assertion supported, another missing.",
+                    "quotes": ["A has 10 branches."],
+                }
+
+            def reconcile(self, claim, evidence):
+                return [
+                    {
+                        "model": "second",
+                        "label": "PARTIALLY_SUPPORTED",
+                        "reason": "Branch count supported; employee count unknown.",
+                        "quotes": ["Employee count unknown."],
+                    }
+                ], ["model-unavailable"]
+
+        result = classify(
+            Recovering(),
+            "A has 10 branches and 40 employees.",
+            "A has 10 branches. Employee count unknown.",
+        )
+        self.assertEqual(result["label"], "PARTIALLY_SUPPORTED")
+        self.assertEqual({r["model"] for r in result["reviews"]}, {"first", "second"})
+        self.assertTrue(result["review_recovery_used_initial"])
+        self.assertEqual(
+            set(result["quotes"]), {"A has 10 branches.", "Employee count unknown."}
+        )
+
+    def test_incomplete_reassessment_never_rescues_disagreement_or_duplicate_identity(
+        self,
+    ):
+        class Recovering:
+            names = ["first", "second"]
+            initial_label = "SUPPORTED"
+            fresh = [{"model": "second", "label": "CONTRADICTED"}]
+
+            def review(self, name, claim, evidence):
+                if name == "second":
+                    raise ModelError("model-unavailable")
+                return {
+                    "model": name,
+                    "label": self.initial_label,
+                    "quotes": [evidence],
+                }
+
+            def reconcile(self, claim, evidence):
+                return [dict(r, quotes=[evidence]) for r in self.fresh], ["unavailable"]
+
+        for fresh in [
+            [{"model": "second", "label": "CONTRADICTED"}],
+            [{"model": "first", "label": "SUPPORTED"}],
+            [
+                {"model": "second", "label": "SUPPORTED"},
+                {"model": "third", "label": "CONTRADICTED"},
+            ],
+        ]:
+            with self.subTest(fresh=fresh):
+                models = Recovering()
+                models.fresh = fresh
+                result = classify(models, "A is B.", "A is B.")
+                self.assertEqual(result["label"], "UNVERIFIED")
+                self.assertFalse(result["review_recovery_used_initial"])
+
+    def test_complete_initial_disagreement_cannot_retain_only_the_matching_answer(self):
+        model = Models()
+        model.names = ["first", "second"]
+        model.review = lambda name, claim, evidence: {
+            "model": name,
+            "label": "SUPPORTED" if name == "first" else "CONTRADICTED",
+            "quotes": [evidence],
+        }
+        model.reconcile = lambda claim, evidence: (
+            [{"model": "second", "label": "CONTRADICTED", "quotes": [evidence]}],
+            ["model-unavailable"],
+        )
+        result = classify(model, "A is B.", "A is B. Another report says A is not B.")
+        self.assertEqual(result["label"], "UNVERIFIED")
+        self.assertFalse(result["review_recovery_used_initial"])
+        self.assertEqual(len(result["initial_reviews"]), 2)
+
     def test_unavailable_decomposition_does_not_replace_valid_evidence_reviewer(self):
         model = Models()
         model.call = lambda name, prompt, data: {

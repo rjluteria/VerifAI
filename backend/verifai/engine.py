@@ -199,8 +199,26 @@ def classify(models, claim, evidence):
         initial_reviews = assessments
         assessments, retry_failures = models.reconcile(claim, evidence)
         failures.extend(retry_failures)
+    recovered_initial_review = False
+    if (
+        reconsidered
+        and len(initial_reviews) == 1
+        and len(assessments) == 1
+        and initial_reviews[0]["model"] != assessments[0]["model"]
+        and initial_reviews[0]["label"] == assessments[0]["label"]
+    ):
+        # Both answers evaluated the identical immutable claim/evidence input.
+        # An unavailable fresh reviewer does not invalidate its earlier validated
+        # answer. Never use this path to erase any observed label disagreement,
+        # combine duplicate identities, or rescue a complete disagreeing pair.
+        assessments = assessments + initial_reviews
+        recovered_initial_review = True
     diagnostic = (
-        {"initial_reviews": initial_reviews, "review_reconsidered": True}
+        {
+            "initial_reviews": initial_reviews,
+            "review_reconsidered": True,
+            "review_recovery_used_initial": recovered_initial_review,
+        }
         if reconsidered
         else {}
     )
