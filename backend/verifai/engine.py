@@ -168,7 +168,37 @@ def bounded_abstention(claim, evidence):
             "reason": "The claim does not identify whether duration means battery runtime or useful lifetime; the supplied battery metric cannot resolve it.",
             "quotes": [],
         }
-    return None
+    # A closed pair of population counts cannot resolve geographic size.
+    # Explicit metrics, definitions, direct comparisons and extra facts stay in review.
+    geographic = r"(?:city|town|village|country|state|province|county|island|region) [A-Za-z][A-Za-z0-9 '-]{0,70}"
+    comparison = re.fullmatch(
+        r"("
+        + geographic
+        + r") is (larger|bigger|smaller) than ("
+        + geographic
+        + r")\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if not comparison:
+        return None
+    population = r" has \d+(?:,\d{3})*(?:\.\d+)? (?:residents|inhabitants|people)"
+    if not re.fullmatch(
+        re.escape(comparison[1])
+        + population
+        + r";\s*"
+        + re.escape(comparison[3])
+        + population
+        + r"\.?",
+        evidence.strip(),
+        re.IGNORECASE,
+    ):
+        return None
+    return {
+        "label": "UNVERIFIED",
+        "reason": "The geographic size comparison does not specify population or area; two population counts cannot resolve the unstated metric.",
+        "quotes": [],
+    }
 
 
 def classify(models, claim, evidence):

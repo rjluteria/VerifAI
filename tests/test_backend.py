@@ -131,6 +131,64 @@ class EngineTests(unittest.TestCase):
             "CONTRADICTED",
         )
 
+    def test_unqualified_geographic_size_does_not_guess_population(self):
+        for labels in (["SUPPORTED", "SUPPORTED"], ["CONTRADICTED", "CONTRADICTED"]):
+            models = Reviewers(labels)
+            for claim, evidence in (
+                (
+                    "City A is larger than City B.",
+                    "City A has 100 residents; City B has 200 residents.",
+                ),
+                (
+                    "Town Elm is smaller than Town Birch.",
+                    "Town Elm has 500 inhabitants; Town Birch has 1,000 inhabitants.",
+                ),
+            ):
+                with self.subTest(claim=claim, labels=labels):
+                    result = classify(models, claim, evidence)
+                    self.assertEqual(result["label"], "UNVERIFIED")
+                    self.assertEqual(result["quotes"], [])
+
+    def test_geographic_size_guard_preserves_resolved_and_additional_context(self):
+        cases = (
+            (
+                "City A has a larger population than City B.",
+                "City A has 100 residents; City B has 200 residents.",
+                "CONTRADICTED",
+            ),
+            (
+                "City A is larger than City B.",
+                "In this comparison, larger means population. City A has 100 residents; City B has 200 residents.",
+                "CONTRADICTED",
+            ),
+            (
+                "City A is larger than City B.",
+                "City A is larger than City B.",
+                "SUPPORTED",
+            ),
+            (
+                "City A is larger than City B.",
+                "City A is not larger than City B.",
+                "CONTRADICTED",
+            ),
+            (
+                "Team A is larger than Team B.",
+                "Team A has 10 people; Team B has 20 people.",
+                "CONTRADICTED",
+            ),
+            (
+                "City A is larger than City B.",
+                "City A has 100 residents; City B has 200 residents. City A covers 500 square kilometres; City B covers 100 square kilometres.",
+                "UNVERIFIED",
+            ),
+        )
+        for claim, evidence, label in cases:
+            with self.subTest(claim=claim, evidence=evidence):
+                result = classify(Reviewers([label, label]), claim, evidence)
+                self.assertEqual(result["label"], label)
+                self.assertEqual(result["reason"], "review")
+                self.assertEqual(len(result["reviews"]), 2)
+
     def test_temporal_absence_guard_requires_matching_increase_and_closed_context(self):
         models = Reviewers(["CONTRADICTED", "CONTRADICTED"])
         evidence = "Yield increased after the retrofit was introduced. There is no causal evidence."
