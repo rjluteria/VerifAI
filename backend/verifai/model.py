@@ -426,7 +426,13 @@ No invented assertions. If nothing qualifies return empty claims."""
         instruction += """ Not Verifiable markers indicate explicitly unsupported content:
 report them in unsupported, do not turn them into factual claims. Supplied context
 may resolve subjects in the response but must not produce additional context-only
-claims. If a subject or table relationship cannot be resolved, report unsupported."""
+claims. Preserve a response's explicit generic subject (for example "the painting",
+"the bridge", or "Device A") without inventing a proper name. A missing proper
+name alone is not an extraction limitation: extract its stated factual property,
+leaving later evidence review to establish whether evidence refers to the same
+entity. Do not replace a generic subject with an invented identity. Unresolved
+pronouns with multiple incompatible antecedents or unresolved table relationships
+remain unsupported."""
         chunks = []
         for paragraph in text.split("\n\n"):
             if len(paragraph) > 10000:
