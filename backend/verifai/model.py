@@ -222,6 +222,15 @@ class Models:
             units.extend(
                 v.strip() for v in re.split(r"(?<=[.!?])(?=\s)", block) if v.strip()
             )
+        unit_spans, cursor = [], 0
+        for value in units:
+            start = evidence.find(value, cursor)
+            if start < 0:
+                raise ModelError("evidence-position-invalid")
+            unit_spans.append(
+                {"text": value, "start": start, "end": start + len(value)}
+            )
+            cursor = start + len(value)
         candidates = [{"id": i, "text": value} for i, value in enumerate(units)]
         data = {"claim": claim, "evidence": candidates}
         instruction = (
@@ -229,7 +238,11 @@ class Models:
             + """Return exactly JSON
 {"label": one of SUPPORTED/PARTIALLY_SUPPORTED/CONTRADICTED/UNVERIFIED,
 "reason": concise explanation, "quote_ids": [integer evidence IDs grounding the decision]}.
-Read the evidence items in order and preserve their surrounding context. Select
+Read all evidence items in order and preserve their surrounding context. A page
+may discuss several subjects: its title or majority topic does not establish that
+evidence about another subject is absent. Before deciding evidence is missing,
+check every supplied item for the claim subject and property, including later
+answers or paragraphs; distinguish those subjects without transferring facts. Select
 IDs instead of retyping or paraphrasing quotations. An ID supplies provenance,
 not entailment: select only evidence relevant to the decision. Conclusive labels
 need at least one ID. For missing evidence IDs may be empty. Never use outside facts."""
@@ -319,16 +332,21 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                 for assertion in assertions:
                     if time.monotonic() >= validation_deadline:
                         raise ModelError("partial-validation-time-budget")
+                    atomic = self.judge(
+                        name,
+                        assertion["text"],
+                        evidence,
+                        reconsider=reconsider,
+                        _atomic=True,
+                    )
                     checks.append(
                         {
                             "claim": assertion["text"],
-                            **self.judge(
-                                name,
-                                assertion["text"],
-                                evidence,
-                                reconsider=reconsider,
-                                _atomic=True,
-                            ),
+                            **{
+                                key: value
+                                for key, value in atomic.items()
+                                if key != "quote_spans"
+                            },
                         }
                     )
                 atomic_labels = {check["label"] for check in checks}
@@ -342,6 +360,9 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     "quotes": list(
                         dict.fromkeys(units[i] for i in result["quote_ids"])
                     ),
+                    "quote_spans": [
+                        unit_spans[i] for i in dict.fromkeys(result["quote_ids"])
+                    ],
                     "review_attempts": attempt + 1,
                     **(
                         {"decomposition_model": decomposition_model}

@@ -11,7 +11,14 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from verifai.engine import Engine, aggregate, arithmetic, classify, passages
+from verifai.engine import (
+    Engine,
+    aggregate,
+    arithmetic,
+    classify,
+    passages,
+    quoted_snippets,
+)
 from verifai.model import ModelError, Models, retry_delay
 from verifai.network import FetchRejected, destination
 from verifai.server import Service, handler, strict_json, valid_request
@@ -227,6 +234,51 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["review_attempts"], 2)
         self.assertIn("atomic_checks", calls[-1])
         self.assertEqual(result["quotes"], ["The depot has 6 bays and 70 staff."])
+
+    def test_repeated_quote_preserves_the_model_selected_source_occurrence(self):
+        text = "Alpha is the first enclosure. Its height is 121 metres.\n\nBeta is the second enclosure. Its height is 121 metres."
+        models = Models()
+        models.extract = lambda claim: ([{"text": claim, "quote": claim}], [])
+        models.rank = lambda claim, passages, **kwargs: passages
+        models.call = lambda *args: {
+            "label": "SUPPORTED",
+            "reason": "Beta's height matches.",
+            "quote_ids": [3],
+        }
+        document = {
+            "url": "https://example.org/enclosures",
+            "text": text,
+            "accessible": True,
+            "checked_at": 0,
+            "sha256": "fixture",
+        }
+        result = Engine(models, lambda url: document, lambda claim: []).verify(
+            "Beta is 121 metres tall.", [document["url"]]
+        )
+        snippet = result["claims"][0]["tracks"]["citation"][0]["snippets"][0]
+        self.assertEqual(snippet["text"], "Its height is 121 metres.")
+        self.assertEqual(snippet["start"], text.rfind(snippet["text"]))
+        self.assertEqual(text[snippet["start"] : snippet["end"]], snippet["text"])
+
+    def test_quote_occurrences_map_through_ranked_passages_and_reject_cross_boundary(
+        self,
+    ):
+        selected = [{"text": "Same.", "start": 90}, {"text": "Same.", "start": 10}]
+        verdict = {
+            "quotes": ["Same."],
+            "quote_spans": [
+                {"text": "Same.", "start": 0, "end": 5},
+                {"text": "Same.", "start": 7, "end": 12},
+            ],
+        }
+        self.assertEqual(
+            [s["start"] for s in quoted_snippets(verdict, selected)], [90, 10]
+        )
+        crossing = {
+            "quotes": [".\n\nS"],
+            "quote_spans": [{"text": ".\n\nS", "start": 4, "end": 8}],
+        }
+        self.assertIsNone(quoted_snippets(crossing, selected))
 
     def test_compound_duration_keeps_other_supported_fact_in_review(self):
         model = Reviewers(["PARTIALLY_SUPPORTED", "PARTIALLY_SUPPORTED"])

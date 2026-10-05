@@ -228,8 +228,67 @@ def classify(models, claim, evidence):
         "reason": assessments[0]["reason"],
         "quotes": quotes,
         "reviews": assessments,
+        **(
+            {
+                "quote_spans": [
+                    dict(text=text, start=start, end=end)
+                    for text, start, end in dict.fromkeys(
+                        (span["text"], span["start"], span["end"])
+                        for row in assessments
+                        for span in row.get("quote_spans", [])
+                    )
+                ]
+            }
+            if any("quote_spans" in row for row in assessments)
+            else {}
+        ),
         **diagnostic,
     }
+
+
+def quoted_snippets(verdict, selected):
+    snippets = []
+    if "quote_spans" not in verdict:
+        for quote in verdict["quotes"]:
+            for passage in selected:
+                offset = passage["text"].find(quote)
+                if offset >= 0:
+                    snippets.append(
+                        {
+                            "text": quote,
+                            "start": passage["start"] + offset,
+                            "end": passage["start"] + offset + len(quote),
+                        }
+                    )
+                    break
+            else:
+                return None
+        return snippets
+    spans = verdict["quote_spans"]
+    if {span["text"] for span in spans} != set(verdict["quotes"]):
+        return None
+    for span in spans:
+        cursor = 0
+        for passage in selected:
+            offset = span["start"] - cursor
+            if (
+                0 <= offset
+                and span["end"] <= cursor + len(passage["text"])
+                and span["end"] - span["start"] == len(span["text"])
+                and passage["text"][offset : offset + len(span["text"])] == span["text"]
+            ):
+                snippets.append(
+                    {
+                        "text": span["text"],
+                        "start": passage["start"] + offset,
+                        "end": passage["start"] + offset + len(span["text"]),
+                    }
+                )
+                break
+            cursor += len(passage["text"]) + 2
+        else:
+            return None
+    return snippets
 
 
 def passages(text, claim, limit=6):
@@ -400,20 +459,8 @@ class Engine:
                         )
                         evidence = "\n\n".join(p["text"] for p in selected)
                         verdict = classify(self.models, claim, evidence)
-                        snippets = []
-                        for quote in verdict["quotes"]:
-                            for p in selected:
-                                offset = p["text"].find(quote)
-                                if offset >= 0:
-                                    snippets.append(
-                                        {
-                                            "text": quote,
-                                            "start": p["start"] + offset,
-                                            "end": p["start"] + offset + len(quote),
-                                        }
-                                    )
-                                    break
-                        if len(snippets) != len(verdict["quotes"]):
+                        snippets = quoted_snippets(verdict, selected)
+                        if snippets is None:
                             verdict = {
                                 "label": "UNVERIFIED",
                                 "reason": "Quotation crossed selected evidence boundaries.",
