@@ -52,10 +52,16 @@ correction as an unresolved conflict. Read both the old entry and its correction
 some supported, others missing, none contradicted. Missing evidence, unresolved
 conflicts, stale-only current assertions, or association without causal proof are
 UNVERIFIED. Missing causal proof is never contradiction or partial support.
+For example, improved output after an intervention with explicitly no causal
+evidence cannot establish or disprove the intervention's effect: UNVERIFIED.
 Explicit disproof of causation is CONTRADICTED. Calculate percentage changes as
 (new-old)/old*100; check claimed numbers and evidence agree. Respect negation. Preserve detection/reporting thresholds: a non-detection above
 one threshold does not rule out detection below it. Reporting limits and detection
 limits are not interchangeable. Do not expand bounded negation into total absence.
+For example, "The lab detected copper" remains UNVERIFIED if the only evidence
+says it did not detect copper above its reporting limit; below-limit detection
+has not been ruled out. A claim specifically asserting detection above that same
+limit would instead be CONTRADICTED.
 If a material term has unresolved distinct meanings (such as city "larger" meaning
 area or population), evidence about only one metric cannot settle the unspecified
 claim. Abstain UNVERIFIED instead of choosing an unstated meaning.
@@ -209,7 +215,7 @@ class Models:
                 time.sleep(1)
         raise ModelError("model-unavailable")
 
-    def judge(self, name, claim, evidence, reconsider=False):
+    def judge(self, name, claim, evidence, reconsider=False, _atomic=False):
         units = []
         for block in evidence.split("\n\n"):
             # Candidates retain complete sentences and exact source punctuation.
@@ -238,6 +244,8 @@ assertions with at least one supported, at least one missing, and NONE contradic
 Different properties of one object are separable; do not fuse length and mass or
 opening date and pupil count into an indivisible assertion. Preserve all qualifiers.
 Do not force agreement or conclusiveness. If evidence is insufficient, abstain."""
+        if _atomic:
+            instruction += " This is one extracted atomic assertion. PARTIALLY_SUPPORTED is not a valid category for this atomic check."
         for attempt in range(2):
             prompt = instruction
             if attempt:
@@ -257,6 +265,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     for i in result["quote_ids"]
                 )
                 or (result["label"] != "UNVERIFIED" and not result["quote_ids"])
+                or (_atomic and result["label"] == "PARTIALLY_SUPPORTED")
             )
             if not invalid and result["label"] == "PARTIALLY_SUPPORTED":
                 # A partial label cannot affirm a contradiction in its own reason.
@@ -299,6 +308,33 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                         "quotes": [],
                         "review_attempts": attempt + 1,
                     }
+                if len(assertions) > 8:
+                    raise ModelError("partial-decomposition-complex")
+                # Validate Partial against each material assertion with this same
+                # reviewer. These checks are not additional independent reviewers.
+                # Incompatible atomic evidence invalidates Partial; repair the
+                # whole review rather than forcing a category from keywords.
+                checks = []
+                validation_deadline = time.monotonic() + 120
+                for assertion in assertions:
+                    if time.monotonic() >= validation_deadline:
+                        raise ModelError("partial-validation-time-budget")
+                    checks.append(
+                        {
+                            "claim": assertion["text"],
+                            **self.judge(
+                                name,
+                                assertion["text"],
+                                evidence,
+                                reconsider=reconsider,
+                                _atomic=True,
+                            ),
+                        }
+                    )
+                atomic_labels = {check["label"] for check in checks}
+                if atomic_labels != {"SUPPORTED", "UNVERIFIED"}:
+                    invalid = True
+                    data = {**data, "atomic_checks": checks}
             if not invalid:
                 return {
                     "label": result["label"],
@@ -317,6 +353,11 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                 "claim": claim,
                 "evidence": candidates,
                 "previous_invalid_output": result,
+                **(
+                    {"atomic_checks": data["atomic_checks"]}
+                    if "atomic_checks" in data
+                    else {}
+                ),
             }
         raise ModelError("ungrounded-model-output")
 

@@ -4,7 +4,7 @@ This is a private development candidate. Release acceptance is incomplete. Score
 
 | Requirement | Measured status |
 | --- | --- |
-| Supplied-evidence factual regression | 81/81 on the frozen audited corpus: 56 historic and 25 broad cases. Every returned quotation was present in its supplied evidence. This does not test extraction or live retrieval. |
+| Supplied-evidence factual regression | The previous completed DeepSeek/GPT configuration passed 81/81 on the frozen audited corpus: 56 historic and 25 broad cases. The current validator/fast-model candidate is awaiting its full rerun; an exploratory 78/81 failure is preserved and has not been accepted. Every returned quotation was present in its supplied evidence. This does not test extraction or live retrieval. |
 | Controlled pipeline and real-source categories | Current candidate retests are in progress. The previous baseline passed 27 atomic verdicts and 27 categories in each track, plus 4 citation and 21 independent-source records in the fixed source cohort. These are separate cohorts. |
 | Fresh live facts | Current retest pending. The previous four-claim cohort passed; it does not establish ongoing search reliability or universal browser access. |
 | Source readability | Twenty fixed-source URLs were readable in native Chrome during the current check, with relevant fact markers. One AMP story exposed the fact text and title but had autoplay/interstitial ads; a stable Venus-slide screenshot was not established. Semantic interpretation is a separate gate. |

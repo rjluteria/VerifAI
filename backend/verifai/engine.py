@@ -85,6 +85,66 @@ def bounded_abstention(claim, evidence):
             "reason": "Observational association without causal proof does not establish or disprove the claimed effect.",
             "quotes": [],
         }
+    # A matching observed increase does not establish its cause. Only a closed
+    # two-sentence temporal observation qualifies; other effects, quantities,
+    # compound claims and additional source assertions stay in factual review.
+    causal = re.fullmatch(
+        r"([A-Za-z][A-Za-z0-9 -]{0,100}) caused increased ([A-Za-z][A-Za-z0-9 -]{0,100})\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    temporal = re.fullmatch(
+        r"([A-Za-z][A-Za-z0-9 -]{0,100}) increased after ([A-Za-z][A-Za-z0-9 -]{0,100}) (?:was installed|was introduced|began|started)\.\s*There is no causal evidence\.",
+        evidence.strip(),
+        re.IGNORECASE,
+    )
+
+    def subject(value):
+        return re.sub(r"^(?:the|an|a) ", "", value.lower()).strip()
+
+    if (
+        causal
+        and temporal
+        and subject(causal[1]) == subject(temporal[2])
+        and subject(causal[2]) == subject(temporal[1])
+        and not re.search(
+            r"\b(?:and|or|proved|proves|confirmed|confirms|established|establishes|demonstrated|demonstrates)\b",
+            claim,
+            re.IGNORECASE,
+        )
+    ):
+        return {
+            "label": "UNVERIFIED",
+            "reason": "The matching temporal increase does not establish or disprove the asserted cause; causal evidence is explicitly absent.",
+            "quotes": [],
+        }
+    # A non-detection above a reporting limit does not settle an unqualified
+    # detection assertion. Exact subject/analyte identity and one source sentence
+    # are required, so additional findings and bounded claims remain reviewed.
+    detection = re.fullmatch(
+        r"([A-Za-z][A-Za-z0-9 -]{0,100}) detected ([A-Za-z][A-Za-z0-9 -]{0,80})\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if (
+        detection
+        and not re.search(
+            r"\b(?:above|below|and|or|no|not)\b", detection[2], re.IGNORECASE
+        )
+        and re.fullmatch(
+            re.escape(detection[1])
+            + r" did not detect "
+            + re.escape(detection[2])
+            + r" above the (?:reporting|detection|quantification) limit\.",
+            evidence.strip(),
+            re.IGNORECASE,
+        )
+    ):
+        return {
+            "label": "UNVERIFIED",
+            "reason": "Non-detection above the stated limit does not establish whether detection occurred below that limit.",
+            "quotes": [],
+        }
     # An unqualified device duration does not select battery runtime over useful
     # lifetime. Directly repeated wording or an explicit claim metric stays in review.
     duration = re.fullmatch(

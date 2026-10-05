@@ -124,6 +124,110 @@ class EngineTests(unittest.TestCase):
             "CONTRADICTED",
         )
 
+    def test_temporal_absence_guard_requires_matching_increase_and_closed_context(self):
+        models = Reviewers(["CONTRADICTED", "CONTRADICTED"])
+        evidence = "Yield increased after the retrofit was introduced. There is no causal evidence."
+        self.assertEqual(
+            classify(models, "The retrofit caused increased yield.", evidence)["label"],
+            "UNVERIFIED",
+        )
+        self.assertEqual(
+            classify(models, "The retrofit caused decreased yield.", evidence)["label"],
+            "CONTRADICTED",
+        )
+        self.assertEqual(
+            classify(
+                models,
+                "The retrofit caused increased yield and lowered costs.",
+                evidence + " Costs doubled.",
+            )["label"],
+            "CONTRADICTED",
+        )
+        self.assertEqual(
+            classify(
+                models,
+                "The report proved the retrofit caused increased yield.",
+                evidence,
+            )["label"],
+            "CONTRADICTED",
+        )
+
+    def test_threshold_absence_does_not_mask_explicit_bounded_detection_or_later_findings(
+        self,
+    ):
+        claim = "The laboratory detected cadmium."
+        evidence = "The laboratory did not detect cadmium above the detection limit."
+        self.assertEqual(
+            classify(Reviewers(["CONTRADICTED", "CONTRADICTED"]), claim, evidence)[
+                "label"
+            ],
+            "UNVERIFIED",
+        )
+        bounded = "The laboratory detected cadmium above the detection limit."
+        self.assertEqual(
+            classify(Reviewers(["CONTRADICTED", "CONTRADICTED"]), bounded, evidence)[
+                "label"
+            ],
+            "CONTRADICTED",
+        )
+        self.assertEqual(
+            classify(
+                Reviewers(), claim, evidence + " Cadmium was detected below that limit."
+            )["label"],
+            "SUPPORTED",
+        )
+        mismatch = classify(
+            Reviewers(["UNVERIFIED", "UNVERIFIED"]),
+            "The laboratory detected copper.",
+            evidence,
+        )
+        self.assertEqual(len(mismatch["reviews"]), 2)
+
+    def test_partial_review_with_conflicting_atomic_fact_is_repaired_not_forced(self):
+        models = Models()
+        calls = []
+
+        def call(name, prompt, data):
+            calls.append(data)
+            if data["claim"] == "The depot has 6 bays":
+                return {
+                    "label": "SUPPORTED",
+                    "reason": "Bay count matches.",
+                    "quote_ids": [0],
+                }
+            if data["claim"] == "The depot has 90 staff":
+                return {
+                    "label": "CONTRADICTED",
+                    "reason": "Staff count differs.",
+                    "quote_ids": [0],
+                }
+            if "atomic_checks" in data:
+                return {
+                    "label": "CONTRADICTED",
+                    "reason": "The incompatible staff count takes precedence.",
+                    "quote_ids": [0],
+                }
+            return {
+                "label": "PARTIALLY_SUPPORTED",
+                "reason": "Six bays are supported but staff are not.",
+                "quote_ids": [0],
+            }
+
+        models.call = call
+        models.extract = lambda *args, **kwargs: (
+            [{"text": "The depot has 6 bays"}, {"text": "The depot has 90 staff"}],
+            [],
+        )
+        result = models.judge(
+            "test",
+            "The depot has 6 bays and 90 staff.",
+            "The depot has 6 bays and 70 staff.",
+        )
+        self.assertEqual(result["label"], "CONTRADICTED")
+        self.assertEqual(result["review_attempts"], 2)
+        self.assertIn("atomic_checks", calls[-1])
+        self.assertEqual(result["quotes"], ["The depot has 6 bays and 70 staff."])
+
     def test_compound_duration_keeps_other_supported_fact_in_review(self):
         model = Reviewers(["PARTIALLY_SUPPORTED", "PARTIALLY_SUPPORTED"])
         self.assertEqual(
@@ -165,8 +269,12 @@ class EngineTests(unittest.TestCase):
 
     def test_partial_reason_with_negated_contradiction_remains_valid(self):
         model = Models()
-        model.call = lambda *args: {
-            "label": "PARTIALLY_SUPPORTED",
+        model.call = lambda name, prompt, data: {
+            "label": "PARTIALLY_SUPPORTED"
+            if " and " in data["claim"]
+            else "SUPPORTED"
+            if "weighs" in data["claim"]
+            else "UNVERIFIED",
             "reason": "Mass is supported; volume unreported. No assertions are contradicted.",
             "quote_ids": [0],
         }
@@ -425,8 +533,12 @@ class EngineTests(unittest.TestCase):
 
     def test_unavailable_decomposition_does_not_replace_valid_evidence_reviewer(self):
         model = Models()
-        model.call = lambda *args: {
-            "label": "PARTIALLY_SUPPORTED",
+        model.call = lambda name, prompt, data: {
+            "label": "PARTIALLY_SUPPORTED"
+            if " and " in data["claim"]
+            else "SUPPORTED"
+            if "branches" in data["claim"]
+            else "UNVERIFIED",
             "reason": "one missing",
             "quote_ids": [0],
         }
