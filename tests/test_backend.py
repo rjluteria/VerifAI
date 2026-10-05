@@ -131,6 +131,49 @@ class EngineTests(unittest.TestCase):
             "CONTRADICTED",
         )
 
+    def test_untested_possible_traces_do_not_prove_presence_or_absence(self):
+        for substance, test_term in (("peanuts", "peanut"), ("lead", "lead")):
+            claim = f"The batch contains no {substance}."
+            evidence = f"The batch may contain traces of {substance}; testing for {test_term} contamination was not performed."
+            for label in ("SUPPORTED", "CONTRADICTED"):
+                with self.subTest(substance=substance, label=label):
+                    result = classify(Reviewers([label, label]), claim, evidence)
+                    self.assertEqual(result["label"], "UNVERIFIED")
+                    self.assertEqual(result["quotes"], [])
+
+    def test_possible_traces_guard_preserves_findings_and_other_context(self):
+        unresolved = "The batch may contain traces of peanuts; testing for peanut contamination was not performed."
+        cases = (
+            (
+                "The batch contains no peanuts.",
+                "Testing confirmed the batch contains peanuts.",
+                "CONTRADICTED",
+            ),
+            (
+                "The batch contains no peanuts.",
+                "Testing confirmed the batch contains no peanuts.",
+                "SUPPORTED",
+            ),
+            (
+                "The batch contains no peanuts.",
+                unresolved + " Later testing confirmed peanuts were present.",
+                "CONTRADICTED",
+            ),
+            (
+                "The batch contains no peanuts and weighs 2 kg.",
+                unresolved,
+                "PARTIALLY_SUPPORTED",
+            ),
+            ("The batch contains no lead.", unresolved, "UNVERIFIED"),
+            ("The sample contains no peanuts.", unresolved, "UNVERIFIED"),
+        )
+        for claim, evidence, label in cases:
+            with self.subTest(claim=claim, evidence=evidence):
+                result = classify(Reviewers([label, label]), claim, evidence)
+                self.assertEqual(result["label"], label)
+                self.assertEqual(result["reason"], "review")
+                self.assertEqual(len(result["reviews"]), 2)
+
     def test_unqualified_geographic_size_does_not_guess_population(self):
         for labels in (["SUPPORTED", "SUPPORTED"], ["CONTRADICTED", "CONTRADICTED"]):
             models = Reviewers(labels)

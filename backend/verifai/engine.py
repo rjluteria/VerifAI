@@ -145,6 +145,31 @@ def bounded_abstention(claim, evidence):
             "reason": "Non-detection above the stated limit does not establish whether detection occurred below that limit.",
             "quotes": [],
         }
+    # Possibility plus explicit absence of testing establishes neither presence
+    # nor absence. Require matching subject/analyte and the entire closed source;
+    # direct findings, extra facts and compound claims remain in model review.
+    absence = re.fullmatch(
+        r"([A-Za-z][A-Za-z0-9 -]{0,100}) contains no ([A-Za-z][A-Za-z0-9 -]{0,80})\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if (
+        absence
+        and not re.search(r"\b(?:and|or|no|not)\b", absence[2], re.IGNORECASE)
+        and re.fullmatch(
+            re.escape(absence[1])
+            + r" may contain traces of "
+            + re.escape(absence[2])
+            + r"; testing for [A-Za-z][A-Za-z0-9 -]{0,80} contamination was not performed\.",
+            evidence.strip(),
+            re.IGNORECASE,
+        )
+    ):
+        return {
+            "label": "UNVERIFIED",
+            "reason": "Possible traces with no contamination testing do not establish either presence or absence of the claimed substance.",
+            "quotes": [],
+        }
     # An unqualified device duration does not select battery runtime over useful
     # lifetime. Directly repeated wording or an explicit claim metric stays in review.
     duration = re.fullmatch(

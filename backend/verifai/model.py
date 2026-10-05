@@ -11,6 +11,8 @@ from email.utils import parsedate_to_datetime
 _REQUEST_LOCK = threading.Lock()
 _LAST_REQUEST = 0.0
 _RATE_LIMITED_UNTIL = {}
+_MODEL_SLOTS = {}
+_MODEL_SLOTS_LOCK = threading.Lock()
 
 
 def paced_open(request, timeout):
@@ -122,6 +124,16 @@ class ModelError(Exception):
     pass
 
 
+def model_slot(name):
+    # Two verification jobs may share a reviewer. Limit simultaneous calls to
+    # that model while allowing different models to run independently.
+    with _MODEL_SLOTS_LOCK:
+        slot = _MODEL_SLOTS.setdefault(name, threading.Lock())
+    if not slot.acquire(timeout=125):
+        raise ModelError("model-queue-timeout")
+    return slot
+
+
 def retry_delay(value):
     try:
         delay = float(value)
@@ -184,6 +196,15 @@ class Models:
             }
 
     def call(self, model, instruction, data, max_tokens=4096):
+        if not self.key:
+            raise ModelError("model-unconfigured")
+        slot = model_slot(model)
+        try:
+            return self._call(model, instruction, data, max_tokens)
+        finally:
+            slot.release()
+
+    def _call(self, model, instruction, data, max_tokens=4096):
         if not self.key:
             raise ModelError("model-unconfigured")
         if _RATE_LIMITED_UNTIL.get(model, 0) > time.monotonic():
