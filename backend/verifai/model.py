@@ -47,6 +47,15 @@ claim's incorrect value or explicitly say that it is false. For example, claim
 not UNVERIFIED. Claim "The journey took 2 days" with evidence "The journey took
 48 hours" is SUPPORTED because compatible units express the same value. Preserve
 metric distinctions: a travel duration does not settle an engine's useful lifetime.
+Values must have a grounded common measurement basis before comparison. Different
+currencies are not fixed-conversion physical units. Do not infer an exchange rate,
+parity, or a converted amount from currency names or outside knowledge. Revenue
+reported in one currency neither establishes nor disproves an amount in another
+currency when the applicable conversion rate or converted figure is absent:
+UNVERIFIED. An explicit statement that no converted figure is provided is missing
+evidence, not a denial of that figure. If evidence supplies the applicable rate
+for the same accounting basis and time, calculate the conversion and compare;
+an explicit different value in the SAME currency can directly contradict.
 Distinguish an underlying fact from an assertion about proof or confirmation.
 If the claim explicitly says a source proved or confirmed a fact, and evidence
 explicitly says that source did not establish or confirm it, CONTRADICTED applies
