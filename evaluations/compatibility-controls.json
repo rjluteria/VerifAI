@@ -1,0 +1,44 @@
+[
+  {
+    "id": "different-currency",
+    "claim": "Orion revenue was 10 million US dollars in 2025.",
+    "evidence": "Orion revenue for 2025 was 10 million Canadian dollars. No US-dollar figure is provided.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "No applicable exchange rate or converted figure grounds the claimed currency amount."
+  },
+  {
+    "id": "currency-absence-control",
+    "claim": "Lumen revenue was 8 million euros in 2024.",
+    "evidence": "Lumen revenue was 8 million pounds in 2024. No conversion rate is supplied.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "Equal numeric amounts in different currencies are not a grounded equivalence or contradiction."
+  },
+  {
+    "id": "currency-conversion-support",
+    "claim": "Lumen revenue was 12 million euros in 2024.",
+    "evidence": "Lumen revenue was 10 million pounds in 2024. For this reporting period, the applicable conversion is 1 pound to 1.2 euros.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The supplied rate for the same period converts 10 million to 12 million euros."
+  },
+  {
+    "id": "currency-conversion-contradiction",
+    "claim": "Lumen revenue was 15 million euros in 2024.",
+    "evidence": "Lumen revenue was 10 million pounds in 2024. For this reporting period, the applicable conversion is 1 pound to 1.2 euros.",
+    "expected": "CONTRADICTED",
+    "gold_rationale": "The supplied rate converts to 12 million euros, incompatible with the exact claim of 15 million."
+  },
+  {
+    "id": "same-currency-contradiction",
+    "claim": "Lumen revenue was 8 million euros in 2024.",
+    "evidence": "Lumen revenue was 12 million euros in 2024.",
+    "expected": "CONTRADICTED",
+    "gold_rationale": "The exact same-currency amount for the same entity and year differs."
+  },
+  {
+    "id": "physical-units-support",
+    "claim": "The journey took 3 days.",
+    "evidence": "The journey took 72 hours.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The fixed physical conversion gives 72 hours = 3 days."
+  }
+]

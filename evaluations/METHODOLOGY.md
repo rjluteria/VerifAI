@@ -8,6 +8,8 @@ The public audited datasets contain 56 historic regression cases and 25 broad ca
 
 Use `scripts/evaluate_accuracy.py` separately with each dataset and a configured NVIDIA key. Store outputs outside the repository. The runner refuses to overwrite a previous result, records the dataset digest and configured models, and checks each returned quotation against the supplied evidence. It uses the same classification code as the service. A correct category and exact quotation do not establish successful extraction, live retrieval or semantic quotation quality.
 
+The supplemental `compatibility-controls.json` cohort contains six numerical-basis checks with expected labels fixed before calls. It distinguishes absent currency conversion, supplied conversion, same-currency contradictions and fixed physical-unit equivalence. One case reproduces an existing broad-corpus currency regression; do not add this overlapping cohort to the 81 historic/broad cases. Run it separately with `--dataset evaluations/compatibility-controls.json`.
+
 ## Controlled pipeline
 
 The separate controlled evaluation supplies complete response text to extraction and uses predetermined source documents and discovery URLs. Its 25 responses include two compound responses, requiring 27 atomic assertions. Both citation and independent-source tracks must preserve the expected category for every atomic assertion. Duplicate document text is a copy with separate URL attribution; it is not independent corroboration.
