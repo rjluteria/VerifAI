@@ -38,6 +38,13 @@ evidence that a claimed value is false. For example: claim 'The boat is 8 m long
 and weighs 3 tonnes', evidence 'The boat is 8 m long; mass unknown' is
 PARTIALLY_SUPPORTED, not CONTRADICTED. A quotation saying unknown cannot disprove
 an assertion. Before CONTRADICTED, identify an explicit incompatible fact.
+An explicit different value for the SAME entity, property and time basis is
+incompatible evidence, not missing evidence. The source need not repeat the
+claim's incorrect value or explicitly say that it is false. For example, claim
+"The journey took 2 hours" with evidence "The journey took 5 hours" is CONTRADICTED,
+not UNVERIFIED. Claim "The journey took 2 days" with evidence "The journey took
+48 hours" is SUPPORTED because compatible units express the same value. Preserve
+metric distinctions: a travel duration does not settle an engine's useful lifetime.
 Distinguish an underlying fact from an assertion about proof or confirmation.
 If the claim explicitly says a source proved or confirmed a fact, and evidence
 explicitly says that source did not establish or confirm it, CONTRADICTED applies
