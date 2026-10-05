@@ -38,8 +38,10 @@ evidence that a claimed value is false. For example: claim 'The boat is 8 m long
 and weighs 3 tonnes', evidence 'The boat is 8 m long; mass unknown' is
 PARTIALLY_SUPPORTED, not CONTRADICTED. A quotation saying unknown cannot disprove
 an assertion. Before CONTRADICTED, identify an explicit incompatible fact.
-An explicit different value for the SAME entity, property and time basis is
-incompatible evidence, not missing evidence. The source need not repeat the
+An explicit incompatible value for the SAME entity, property and time basis is
+contradictory evidence, not missing evidence. For unqualified exact quantities,
+different values are incompatible; approximate quantities require the additional
+precision/uncertainty checks below. The source need not repeat the
 claim's incorrect value or explicitly say that it is false. For example, claim
 "The journey took 2 hours" with evidence "The journey took 5 hours" is CONTRADICTED,
 not UNVERIFIED. Claim "The journey took 2 days" with evidence "The journey took
@@ -87,8 +89,14 @@ An atomic assertion cannot be PARTIALLY_SUPPORTED merely because a related fact
 or a different numerical qualifier is established. Partial support requires two
 independently meaningful assertions, not a subject and its value split apart.
 Do not invent numerical tolerance for approximately: source values that round to
-the claimed precision support it; neighboring rounded values with no stated
-uncertainty do not establish that precision.
+the claimed precision support it. A nearby different rounded value with no stated
+uncertainty neither establishes the requested precision nor establishes explicit
+incompatibility with an unspecified approximate range: UNVERIFIED. For example,
+claim "The route is approximately 31 km long" with source "The route is 30 km long"
+is UNVERIFIED, not SUPPORTED or CONTRADICTED. This is not a blanket exemption for
+approximate claims: a journey taking 5 days explicitly contradicts a claim of
+about 1 hour on the same measurement basis. Preserve all qualifiers and abstain
+when compatibility depends on an unstated uncertainty range.
 Return exactly JSON {"label": one of SUPPORTED/PARTIALLY_SUPPORTED/CONTRADICTED/UNVERIFIED,
 "reason": concise explanation, "quotes": [exact evidence substrings grounding the decision]}.
 An atomic assertion cannot be PARTIALLY_SUPPORTED merely because it is related to
