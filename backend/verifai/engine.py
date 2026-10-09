@@ -63,6 +63,42 @@ def arithmetic(claim, evidence):
     return None
 
 
+def partition_count(claim, evidence):
+    # Closed, internally consistent age-count partitions establish their subgroup
+    # counts. Do not compare an adult/juvenile count with the aggregate total.
+    # Qualifiers, mismatched subjects and additional findings stay in model review.
+    match = re.fullmatch(
+        r"([A-Za-z][A-Za-z0-9 -]{0,100}) counted ([0-9]{1,9}) (adult|juvenile) ([A-Za-z]{1,40})\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if not match or re.search(
+        r"\b(?:and|or|not|never|no|only|about|approximately)\b", claim, re.IGNORECASE
+    ):
+        return None
+    subject, claimed, category, noun = match.groups()
+    source = re.fullmatch(
+        re.escape(subject)
+        + r" counted ([0-9]{1,9}) "
+        + re.escape(noun)
+        + r": ([0-9]{1,9}) adults and ([0-9]{1,9}) juveniles\.?",
+        evidence.strip(),
+        re.IGNORECASE,
+    )
+    if not source:
+        return None
+    total, adults, juveniles = map(int, source.groups())
+    if total != adults + juveniles:
+        return None
+    observed = adults if category.lower() == "adult" else juveniles
+    return {
+        "label": "SUPPORTED" if int(claimed) == observed else "CONTRADICTED",
+        "reason": f"The explicit partition counts {observed} {category.lower()} {noun}, rather than using the aggregate count of {total}.",
+        "quotes": [evidence.strip()],
+        "calculation": True,
+    }
+
+
 def bounded_abstention(claim, evidence):
     # Closed observational-only grammar states absence of causal proof, not
     # disproof. Additional factual sentences fall outside this guard.
@@ -227,7 +263,11 @@ def bounded_abstention(claim, evidence):
 
 
 def classify(models, claim, evidence):
-    deterministic = bounded_abstention(claim, evidence) or arithmetic(claim, evidence)
+    deterministic = (
+        bounded_abstention(claim, evidence)
+        or partition_count(claim, evidence)
+        or arithmetic(claim, evidence)
+    )
     if deterministic:
         return deterministic
     if not evidence.strip():

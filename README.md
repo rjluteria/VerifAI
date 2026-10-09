@@ -91,3 +91,5 @@ Provider references: [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-
 Retesting found Chegg content readable to the service while its page denied access in the user-facing browser. Chegg URLs are conservatively excluded from proof and remain visible as restricted sources. This exclusion does not establish universal browser accessibility for other hosts.
 
 Claim extraction rejects reconstructed or otherwise inexact quotations. Invalid schema or quotation output receives at most one repair attempt per model within the existing extraction time budget. Provider failures move to the next configured extractor; they do not trigger output repair. Returned quotations must still occur verbatim in the original response.
+
+A closed, internally consistent count partition compares adult or juvenile counts with the matching subgroup, never the total. It requires the same stated subject and noun and a complete two-group source sentence. Qualifiers, conflicting totals, different entities and additional source findings stay in model review. The copied source sentence remains available as the numerical evidence.

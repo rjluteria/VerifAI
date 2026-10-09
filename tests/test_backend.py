@@ -174,6 +174,73 @@ class EngineTests(unittest.TestCase):
                 self.assertEqual(result["reason"], "review")
                 self.assertEqual(len(result["reviews"]), 2)
 
+    def test_explicit_partition_uses_subgroup_count_with_exact_source_quote(self):
+        cases = (
+            (
+                "The survey counted 40 adult cranes.",
+                "The survey counted 40 cranes: 25 adults and 15 juveniles.",
+                "CONTRADICTED",
+            ),
+            (
+                "The census counted 12 adult deer.",
+                "The census counted 12 deer: 8 adults and 4 juveniles.",
+                "CONTRADICTED",
+            ),
+            (
+                "The census counted 8 adult deer.",
+                "The census counted 12 deer: 8 adults and 4 juveniles.",
+                "SUPPORTED",
+            ),
+            (
+                "The census counted 4 juvenile deer.",
+                "The census counted 12 deer: 8 adults and 4 juveniles.",
+                "SUPPORTED",
+            ),
+            (
+                "The census counted 12 juvenile deer.",
+                "The census counted 12 deer: 8 adults and 4 juveniles.",
+                "CONTRADICTED",
+            ),
+        )
+        for claim, evidence, label in cases:
+            with self.subTest(claim=claim):
+                result = classify(
+                    Reviewers(["UNVERIFIED", "UNVERIFIED"]), claim, evidence
+                )
+                self.assertEqual(result["label"], label)
+                self.assertEqual(result["quotes"], [evidence])
+                self.assertTrue(result["calculation"])
+
+    def test_partition_count_does_not_override_qualifiers_or_conflicting_context(self):
+        source = "The survey counted 40 cranes: 25 adults and 15 juveniles."
+        cases = (
+            ("The other survey counted 40 adult cranes.", source),
+            ("The survey counted 40 adult owls.", source),
+            ("The survey counted at least 20 adult cranes.", source),
+            ("The survey counted 40 cranes.", source),
+            ("The survey counted 40 adult cranes and 2 nests.", source),
+            (
+                "The survey counted 40 adult cranes.",
+                source + " A corrected count reported 40 adults.",
+            ),
+            (
+                "The survey counted 40 adult cranes.",
+                "The survey counted 40 cranes: 35 adults and 15 juveniles.",
+            ),
+            (
+                "The survey counted 40 adult cranes.",
+                "The survey counted 40 cranes: approximately 25 adults and 15 juveniles.",
+            ),
+        )
+        for claim, evidence in cases:
+            with self.subTest(claim=claim, evidence=evidence):
+                result = classify(
+                    Reviewers(["UNVERIFIED", "UNVERIFIED"]), claim, evidence
+                )
+                self.assertEqual(result["label"], "UNVERIFIED")
+                self.assertEqual(result["reason"], "review")
+                self.assertEqual(len(result["reviews"]), 2)
+
     def test_unqualified_geographic_size_does_not_guess_population(self):
         for labels in (["SUPPORTED", "SUPPORTED"], ["CONTRADICTED", "CONTRADICTED"]):
             models = Reviewers(labels)
