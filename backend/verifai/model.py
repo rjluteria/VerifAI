@@ -540,6 +540,13 @@ leaving later evidence review to establish whether evidence refers to the same
 entity. Do not replace a generic subject with an invented identity. Unresolved
 pronouns with multiple incompatible antecedents or unresolved table relationships
 remain unsupported."""
+        instruction += """ The text field may resolve an inherited subject; quote must
+remain an exact contiguous substring of response, with no inherited words added.
+For response "The instrument weighs 3 kg and holds 5 litres", valid claims are
+{"text":"The instrument weighs 3 kg","quote":"weighs 3 kg"} and
+{"text":"The instrument holds 5 litres","quote":"holds 5 litres"}.
+Using the entire original sentence as quote is also valid. The reconstructed
+standalone second assertion is not an exact quotation of that response."""
         chunks = []
         for paragraph in text.split("\n\n"):
             if len(paragraph) > 10000:
@@ -573,37 +580,52 @@ remain unsupported."""
                 + [os.getenv("REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash")]
             )
             for name in dict.fromkeys(n for n in candidates if n):
-                try:
-                    candidate = self.call(
-                        name, instruction, {"response": chunk, "context": context}, 4096
-                    )
-                    if (
-                        not isinstance(candidate, dict)
-                        or set(candidate) != {"claims", "unsupported"}
-                        or not isinstance(candidate["claims"], list)
-                        or len(candidate["claims"]) > 60
-                        or not isinstance(candidate["unsupported"], list)
-                        or any(
-                            not isinstance(v, str) or len(v) > 1000
-                            for v in candidate["unsupported"]
-                        )
-                    ):
-                        raise ModelError("extraction-schema")
-                    for item in candidate["claims"]:
+                request = {"response": chunk, "context": context}
+                for extraction_attempt in range(2):
+                    if time.monotonic() >= deadline:
+                        break
+                    try:
+                        candidate = self.call(name, instruction, request, 4096)
                         if (
-                            not isinstance(item, dict)
-                            or set(item) != {"text", "quote"}
-                            or not isinstance(item["text"], str)
-                            or not 0 < len(item["text"]) <= 2000
-                            or not isinstance(item["quote"], str)
-                            or not item["quote"].strip()
-                            or item["quote"] not in chunk
+                            not isinstance(candidate, dict)
+                            or set(candidate) != {"claims", "unsupported"}
+                            or not isinstance(candidate["claims"], list)
+                            or len(candidate["claims"]) > 60
+                            or not isinstance(candidate["unsupported"], list)
+                            or any(
+                                not isinstance(v, str) or len(v) > 1000
+                                for v in candidate["unsupported"]
+                            )
                         ):
-                            raise ModelError("extraction-provenance")
-                    result = candidate
+                            raise ModelError("extraction-schema")
+                        for item in candidate["claims"]:
+                            if (
+                                not isinstance(item, dict)
+                                or set(item) != {"text", "quote"}
+                                or not isinstance(item["text"], str)
+                                or not 0 < len(item["text"]) <= 2000
+                                or not isinstance(item["quote"], str)
+                                or not item["quote"].strip()
+                                or item["quote"] not in chunk
+                            ):
+                                raise ModelError("extraction-provenance")
+                        result = candidate
+                        break
+                    except ModelError as error:
+                        if str(error) not in {
+                            "extraction-schema",
+                            "extraction-provenance",
+                        }:
+                            break
+                        request = {
+                            "response": chunk,
+                            "context": context,
+                            "repair": "Previous extraction failed "
+                            + str(error)
+                            + ". Return the required schema. Copy each quote verbatim from response, never from reconstructed text. Do not omit factual assertions to avoid the error.",
+                        }
+                if result is not None:
                     break
-                except ModelError:
-                    continue
             if result is None:
                 unsupported.append(
                     "Claim analysis unavailable for part of the response."

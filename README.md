@@ -89,3 +89,5 @@ Agreement between two models can still be wrong. Exact quotations establish prov
 Provider references: [NVIDIA API](https://docs.api.nvidia.com/nim/reference/llm-apis), [Tavily keyless access](https://docs.tavily.com/documentation/keyless), [Chrome side panel](https://developer.chrome.com/docs/extensions/reference/api/sidePanel), [Render Blueprints](https://render.com/docs/blueprint-spec).
 
 Retesting found Chegg content readable to the service while its page denied access in the user-facing browser. Chegg URLs are conservatively excluded from proof and remain visible as restricted sources. This exclusion does not establish universal browser accessibility for other hosts.
+
+Claim extraction rejects reconstructed or otherwise inexact quotations. Invalid schema or quotation output receives at most one repair attempt per model within the existing extraction time budget. Provider failures move to the next configured extractor; they do not trigger output repair. Returned quotations must still occur verbatim in the original response.
