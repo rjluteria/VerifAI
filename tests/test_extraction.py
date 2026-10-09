@@ -103,3 +103,120 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(claims, valid["claims"])
         self.assertEqual(limitations, [])
         self.assertEqual(call.call_count, 1)
+
+    def cached_review_model(self, disagree=False):
+        model = Models()
+        model.names = ["first", "second"]
+        calls = []
+
+        def call(name, instruction, data, *args):
+            calls.append((name, data))
+            if "response" in data:
+                response = data["response"]
+                subject = response.split(" has ")[0]
+                return {
+                    "claims": [
+                        {"text": subject + " has 12 chairs.", "quote": "has 12 chairs"},
+                        {"text": subject + " has 15 tables.", "quote": "15 tables"},
+                    ],
+                    "unsupported": [],
+                }
+            claim = data["claim"]
+            if " and " in claim:
+                if disagree and name == "second" and "previous_invalid_output" in data:
+                    return {
+                        "label": "CONTRADICTED",
+                        "reason": "Disagreeing review.",
+                        "quote_ids": [0],
+                    }
+                return {
+                    "label": "PARTIALLY_SUPPORTED",
+                    "reason": "Chairs known, tables unknown.",
+                    "quote_ids": [0, 1],
+                }
+            return {
+                "label": "CONTRADICTED"
+                if disagree and name == "second" and "chairs" in claim
+                else "SUPPORTED"
+                if "chairs" in claim
+                else "UNVERIFIED",
+                "reason": "Independent atomic assessment.",
+                "quote_ids": [0] if "chairs" in claim else [1],
+            }
+
+        model.call = call
+        return model, calls
+
+    def test_shared_structure_keeps_distinct_atomic_reviews_and_expires(self):
+        from verifai.engine import classify
+
+        model, calls = self.cached_review_model()
+        claim = "Workshop A has 12 chairs and 15 tables."
+        evidence = "Workshop A has 12 chairs. Its table count is unknown."
+        for iteration in range(2):
+            result = classify(model, claim, evidence)
+            self.assertEqual(result["label"], "PARTIALLY_SUPPORTED")
+            self.assertEqual(
+                {r["model"] for r in result["reviews"]}, {"first", "second"}
+            )
+            self.assertEqual(
+                {r["decomposition_model"] for r in result["reviews"]}, {"first"}
+            )
+            self.assertEqual(sum("response" in d for _, d in calls), iteration + 1)
+        for name in model.names:
+            atomic = [
+                d["claim"]
+                for n, d in calls
+                if n == name and "claim" in d and " and " not in d["claim"]
+            ]
+            self.assertEqual(atomic.count("Workshop A has 12 chairs."), 2)
+            self.assertEqual(atomic.count("Workshop A has 15 tables."), 2)
+
+    def test_shared_structure_does_not_force_reviewer_agreement(self):
+        from verifai.engine import classify
+
+        model, calls = self.cached_review_model(disagree=True)
+        result = classify(
+            model,
+            "Workshop A has 12 chairs and 15 tables.",
+            "Workshop A has 12 chairs. Its table count is unknown.",
+        )
+        self.assertEqual(result["label"], "UNVERIFIED")
+        self.assertEqual(
+            {r["label"] for r in result["reviews"]},
+            {"PARTIALLY_SUPPORTED", "CONTRADICTED"},
+        )
+        self.assertTrue(result["review_reconsidered"])
+        self.assertEqual(sum("response" in d for _, d in calls), 1)
+
+    def test_shared_structure_isolated_between_concurrent_claims(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        from verifai.engine import classify
+
+        model, calls = self.cached_review_model()
+        subjects = ["Workshop A", "Workshop B"]
+
+        def run(subject):
+            return classify(
+                model,
+                subject + " has 12 chairs and 15 tables.",
+                subject + " has 12 chairs. Its table count is unknown.",
+            )
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            results = list(pool.map(run, subjects))
+        self.assertTrue(all(r["label"] == "PARTIALLY_SUPPORTED" for r in results))
+        extracted = [d["response"] for _, d in calls if "response" in d]
+        self.assertCountEqual(
+            extracted, [s + " has 12 chairs and 15 tables." for s in subjects]
+        )
+        for name in model.names:
+            for subject in subjects:
+                self.assertEqual(
+                    sum(
+                        n == name and d.get("claim") == subject + " has 15 tables."
+                        for n, d in calls
+                    ),
+                    1,
+                )

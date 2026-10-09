@@ -6,6 +6,8 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
+from contextvars import ContextVar
 from email.utils import parsedate_to_datetime
 
 _REQUEST_LOCK = threading.Lock()
@@ -13,6 +15,18 @@ _LAST_REQUEST = 0.0
 _RATE_LIMITED_UNTIL = {}
 _MODEL_SLOTS = {}
 _MODEL_SLOTS_LOCK = threading.Lock()
+_DECOMPOSITION_CACHE = ContextVar("decomposition_cache", default=None)
+
+
+@contextmanager
+def decomposition_scope():
+    # Each classification owns its parsing cache; never retain content between
+    # requests or share mutable state between concurrent jobs.
+    token = _DECOMPOSITION_CACHE.set({})
+    try:
+        yield
+    finally:
+        _DECOMPOSITION_CACHE.reset(token)
 
 
 def paced_open(request, timeout):
@@ -343,20 +357,25 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                         invalid = True
                         break
             if not invalid and result["label"] == "PARTIALLY_SUPPORTED":
-                assertions, limitations = self.extract(claim, names=[name])
-                decomposition_model = name
-                if limitations:
-                    # Structural parsing is separate from factual evidence review.
-                    # Retain this model's validated review if a different available
-                    # extractor can establish the original claim's atomic structure.
-                    parser_model = os.getenv(
-                        "REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash"
-                    )
-                    if parser_model and parser_model != name:
-                        assertions, limitations = self.extract(
-                            claim, names=[parser_model]
+                cache = _DECOMPOSITION_CACHE.get()
+                cached = cache.get(claim) if cache is not None else None
+                if cached is not None:
+                    assertions, decomposition_model = cached
+                    limitations = []
+                else:
+                    assertions, limitations = self.extract(claim, names=[name])
+                    decomposition_model = name
+                    if limitations:
+                        # Parsing can use another extractor; factual checks still
+                        # belong to this reviewer and preserve its actual identity.
+                        parser_model = os.getenv(
+                            "REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash"
                         )
-                        decomposition_model = parser_model
+                        if parser_model and parser_model != name:
+                            assertions, limitations = self.extract(
+                                claim, names=[parser_model]
+                            )
+                            decomposition_model = parser_model
                 if limitations:
                     raise ModelError("partial-decomposition-unavailable")
                 if len(assertions) < 2:
@@ -368,6 +387,11 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     }
                 if len(assertions) > 8:
                     raise ModelError("partial-decomposition-complex")
+                if cache is not None and cached is None:
+                    cache[claim] = (
+                        [dict(assertion) for assertion in assertions],
+                        decomposition_model,
+                    )
                 # Validate Partial against each material assertion with this same
                 # reviewer. These checks are not additional independent reviewers.
                 # Incompatible atomic evidence invalidates Partial; repair the

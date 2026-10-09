@@ -6,7 +6,7 @@ from contextvars import copy_context
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import urlsplit
 
-from .model import ModelError
+from .model import ModelError, decomposition_scope
 
 
 def arithmetic(claim, evidence):
@@ -262,6 +262,7 @@ def bounded_abstention(claim, evidence):
     }
 
 
+@decomposition_scope()
 def classify(models, claim, evidence):
     deterministic = (
         bounded_abstention(claim, evidence)
