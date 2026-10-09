@@ -515,6 +515,10 @@ units, uncertainty and context for pronouns. Preserve named measurement properti
 such as battery runtime versus useful service lifetime; do not replace either
 with an unspecified duration. Split separable assertions. Do not split one quantified relationship into a
 subject assertion and a numerical qualifier; these form one atomic assertion.
+Dates, currencies, units and population restrictions qualify their relationship;
+keep them in that relationship, not as separate claims. For example,
+"The company earned 8 million euros in 2024" is one claim retaining both euros
+and 2024. Do not emit "The company earned in 2024" as a second claim.
 Different properties of the same subject remain separable: "The object weighs
 2 kg and holds 3 litres" yields "The object weighs 2 kg" and "The object holds
 3 litres". "The object weighs 2 kg" alone yields one assertion. Tables
@@ -609,12 +613,35 @@ standalone second assertion is not an exact quotation of that response."""
                                 or item["quote"] not in chunk
                             ):
                                 raise ModelError("extraction-provenance")
+                        # A trailing year attached to an extracted relationship is
+                        # a qualifier, not a second assertion. Ask for repair rather
+                        # than merging text or silently dropping either fragment.
+                        for item in candidate["claims"]:
+                            qualifier = re.fullmatch(
+                                r"(?:in|during|for)\s+(\d{4})[.]?",
+                                item["quote"].strip(),
+                                re.I,
+                            )
+                            if not qualifier:
+                                continue
+                            for other in candidate["claims"]:
+                                if other is item or qualifier[1] in other["text"]:
+                                    continue
+                                before = other["quote"].rstrip(". ")
+                                attached = (
+                                    re.escape(before)
+                                    + r"\s+"
+                                    + re.escape(item["quote"].strip())
+                                )
+                                if re.search(attached, chunk):
+                                    raise ModelError("extraction-qualifier-split")
                         result = candidate
                         break
                     except ModelError as error:
                         if str(error) not in {
                             "extraction-schema",
                             "extraction-provenance",
+                            "extraction-qualifier-split",
                         }:
                             break
                         request = {
@@ -622,7 +649,7 @@ standalone second assertion is not an exact quotation of that response."""
                             "context": context,
                             "repair": "Previous extraction failed "
                             + str(error)
-                            + ". Return the required schema. Copy each quote verbatim from response, never from reconstructed text. Do not omit factual assertions to avoid the error.",
+                            + ". Return the required schema. Copy each quote verbatim from response, never from reconstructed text. Do not omit factual assertions to avoid the error. Keep attached dates, currencies, units and scope in their original relationship; do not split a qualifier into a separate assertion.",
                         }
                 if result is not None:
                     break

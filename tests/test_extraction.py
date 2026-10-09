@@ -63,3 +63,43 @@ class ExtractionTests(unittest.TestCase):
         self.assertEqual(claims, self.valid["claims"])
         self.assertEqual(limitations, [])
         self.assertIn("extraction-schema", call.call_args.args[2]["repair"])
+
+    def test_attached_year_split_is_repaired_with_relationship_intact(self):
+        response = "The company earned 8 million euros in 2024."
+        split = {
+            "claims": [
+                {
+                    "text": "The company earned 8 million euros.",
+                    "quote": "The company earned 8 million euros",
+                },
+                {"text": "The company earned in 2024.", "quote": "in 2024"},
+            ],
+            "unsupported": [],
+        }
+        valid = {"claims": [{"text": response, "quote": response}], "unsupported": []}
+        with patch.object(Models, "call", side_effect=[split, valid]) as call:
+            claims, limitations = Models().extract(response, names=["reviewer"])
+        self.assertEqual(claims, valid["claims"])
+        self.assertEqual(limitations, [])
+        self.assertIn("extraction-qualifier-split", call.call_args.args[2]["repair"])
+
+    def test_separate_dated_events_remain_separate(self):
+        response = "The company opened in 2024. The company closed in 2025."
+        valid = {
+            "claims": [
+                {
+                    "text": "The company opened in 2024.",
+                    "quote": "The company opened in 2024.",
+                },
+                {
+                    "text": "The company closed in 2025.",
+                    "quote": "The company closed in 2025.",
+                },
+            ],
+            "unsupported": [],
+        }
+        with patch.object(Models, "call", return_value=valid) as call:
+            claims, limitations = Models().extract(response, names=["reviewer"])
+        self.assertEqual(claims, valid["claims"])
+        self.assertEqual(limitations, [])
+        self.assertEqual(call.call_count, 1)
