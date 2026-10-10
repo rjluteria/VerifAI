@@ -269,7 +269,9 @@ class Models:
                 result = json.loads(raw)["choices"][0]
                 if result["finish_reason"] != "stop":
                     raise ModelError("model-truncated")
-                return json.loads(result["message"]["content"])
+                parsed = json.loads(result["message"]["content"])
+                _RATE_LIMITED_UNTIL.pop(model, None)
+                return parsed
             except urllib.error.HTTPError as exc:
                 delay = retry_delay(exc.headers.get("Retry-After"))
                 status = exc.code

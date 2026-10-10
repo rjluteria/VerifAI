@@ -274,6 +274,44 @@ class ReliabilityTests(unittest.TestCase):
             self.assertEqual(opened.call_count, 1)
             slept.assert_not_called()
 
+    def test_successful_rate_limit_retry_clears_obsolete_cooldown(self):
+        model = Models()
+        model.key = "synthetic-test-key"
+        fault = urllib.error.HTTPError(
+            "https://provider.test",
+            429,
+            "rate limited",
+            {"Retry-After": "1"},
+            io.BytesIO(b"private content"),
+        )
+        raw = json.dumps(
+            {
+                "choices": [
+                    {"finish_reason": "stop", "message": {"content": '{"ok": true}'}}
+                ]
+            }
+        ).encode()
+        with (
+            patch.dict("verifai.model._RATE_LIMITED_UNTIL", {}, clear=True),
+            patch(
+                "verifai.model.paced_open",
+                side_effect=[
+                    fault,
+                    io.BytesIO(raw),
+                    io.BytesIO(raw),
+                ],
+            ) as opened,
+            patch("verifai.model.time.sleep") as slept,
+        ):
+            self.assertEqual(
+                model.call("synthetic-model", "contract", {}), {"ok": True}
+            )
+            self.assertEqual(
+                model.call("synthetic-model", "contract", {}), {"ok": True}
+            )
+            self.assertEqual(opened.call_count, 3)
+            slept.assert_called_once_with(1)
+
     def test_malformed_and_truncated_provider_output_never_becomes_a_verdict(self):
         payloads = [
             b"not json",
