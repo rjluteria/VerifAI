@@ -1,0 +1,30 @@
+[
+  {
+    "id": "unresolved-measurement-conflict",
+    "claim": "The building is 80 metres tall.",
+    "evidence": "Two equally credible measurements report 80 metres and 90 metres for the same building. No explanation resolves the discrepancy.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "Equally credible unresolved measurements disagree about whether the claimed point is true; neither point can be selected."
+  },
+  {
+    "id": "resolved-measurement-correction",
+    "claim": "The building is 80 metres tall.",
+    "evidence": "Two equally credible measurements report 80 metres and 90 metres for the same building. No explanation resolves the discrepancy. A documented correction establishes 80 metres; the 90-metre measurement was erroneous.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The documented later correction resolves the conflict and explicitly establishes the claimed value."
+  },
+  {
+    "id": "both-measurements-refute-outside-point",
+    "claim": "The building is 100 metres tall.",
+    "evidence": "Two equally credible measurements report 80 metres and 90 metres for the same building. No explanation resolves the discrepancy.",
+    "expected": "CONTRADICTED",
+    "gold_rationale": "Both credible measurements contradict the claimed third value on the same measurement basis, despite disagreeing with each other."
+  },
+  {
+    "id": "measurement-unit-conversion",
+    "claim": "The building is 80 metres tall.",
+    "evidence": "A confirmed measurement establishes that the building is 8000 centimetres tall.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "8000 centimetres equals80 metres; fixed physical-unit conversion preserves the measured quantity."
+  }
+]

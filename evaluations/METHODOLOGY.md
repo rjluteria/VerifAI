@@ -39,3 +39,7 @@ Full source text, private browser captures and development diagnostics are exclu
 ## Numerical-bound controls
 
 The separate `numerical-bounds.json` corpus has ten supplied-evidence cases. A lower or upper bound can be compatible with a point estimate without establishing it. Controls also preserve valid exact-value implications, strict inequality contradiction, rounding, additional point measurements, and coincident inclusive bounds. These cases do not alter the frozen historic or broad corpus, and no measured result is asserted before a completed evaluation.
+
+## Measurement-conflict controls
+
+The separate `measurement-conflicts.json` corpus contains four prelabelled supplied-evidence controls for unresolved equal-credibility measurements, a documented correction, a third value contradicted by both measurements, and fixed-unit equivalence. Conflicting values do not necessarily produce conflicting verdicts about a claim. These controls reproduce a discovered boundary regression; the original 81 cases and fixed-source expected categories remain unchanged. Report this overlapping supplemental cohort separately with `--dataset evaluations/measurement-conflicts.json`. Current provider validation is pending.

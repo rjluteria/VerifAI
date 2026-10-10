@@ -95,3 +95,5 @@ Retesting found Chegg content readable to the service while its page denied acce
 Claim extraction rejects reconstructed or otherwise inexact quotations. Invalid schema or quotation output receives at most one repair attempt per model within the existing extraction time budget. Provider failures move to the next configured extractor; they do not trigger output repair. Returned quotations must still occur verbatim in the original response.
 
 A closed, internally consistent count partition compares adult or juvenile counts with the matching subgroup, never the total. It requires the same stated subject and noun and a complete two-group source sentence. Qualifiers, conflicting totals, different entities and additional source findings stay in model review. The copied source sentence remains available as the numerical evidence.
+
+Four separate [measurement-conflict controls](evaluations/measurement-conflicts.json) preserve unresolved-conflict, correction, shared-contradiction and unit-conversion boundaries. They supplement the frozen regression corpus; current provider validation remains pending.
