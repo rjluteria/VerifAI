@@ -318,7 +318,16 @@ evidence about another subject is absent. Before deciding evidence is missing,
 check every supplied item for the claim subject and property, including later
 answers or paragraphs; distinguish those subjects without transferring facts. Select
 IDs instead of retyping or paraphrasing quotations. An ID supplies provenance,
-not entailment: select only evidence relevant to the decision. Conclusive labels
+not entailment: select the smallest set of clear evidence IDs that grounds every
+material assertion needed for this decision. Do not add loosely related background,
+navigation, copied repetitions, or alternative metrics merely because they share
+the subject. In particular a solar-day cycle and an axial/sidereal rotation period
+are different measurements; use the measurement actually asserted by the claim.
+Prefer explicit unambiguous measurements over inconsistent or ambiguous number
+formatting elsewhere in the same source. Do not repair a suspected source typo or
+infer its intended value. If the only relevant evidence is ambiguous, abstain.
+Read surrounding qualifiers when interpreting an ID, but include contextual IDs
+only when they are needed to resolve a material qualifier or reference. Conclusive labels
 need at least one ID. For missing evidence IDs may be empty. Never use outside facts."""
         )
         if reconsider:
