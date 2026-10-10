@@ -1,0 +1,46 @@
+[
+  {
+    "id": "spin-versus-solar-support",
+    "claim": "Planet Q rotates once on its axis in 7 Earth days.",
+    "evidence": "The measured axial rotation period of Planet Q is 7 Earth days. Its solar-day cycle is 4 Earth days.",
+    "expected": "SUPPORTED",
+    "required_quote": "The measured axial rotation period of Planet Q is 7 Earth days.",
+    "excluded_quotes": [
+      "Its solar-day cycle is 4 Earth days."
+    ],
+    "gold_rationale": "The axial measurement grounds the claim; illumination cycle is a different metric."
+  },
+  {
+    "id": "spin-versus-solar-contradiction",
+    "claim": "Planet Q rotates once on its axis in 1 Earth day.",
+    "evidence": "The measured axial rotation period of Planet Q is 7 Earth days. Its solar-day cycle is 1 Earth day.",
+    "expected": "CONTRADICTED",
+    "required_quote": "The measured axial rotation period of Planet Q is 7 Earth days.",
+    "excluded_quotes": [
+      "Its solar-day cycle is 1 Earth day."
+    ],
+    "gold_rationale": "A matching solar cycle cannot support an incompatible axial rotation claim."
+  },
+  {
+    "id": "runtime-versus-lifetime",
+    "claim": "Device Q has a battery runtime of 8 hours.",
+    "evidence": "Device Q has a measured battery runtime of 6 hours. Its expected useful lifetime is 8 years.",
+    "expected": "CONTRADICTED",
+    "required_quote": "Device Q has a measured battery runtime of 6 hours.",
+    "excluded_quotes": [
+      "Its expected useful lifetime is 8 years."
+    ],
+    "gold_rationale": "Useful lifetime is not battery runtime; use explicit incompatible runtime."
+  },
+  {
+    "id": "travel-versus-engine-duration",
+    "claim": "The vessel journey took 12 hours.",
+    "evidence": "The vessel journey took 12 hours. The engine has a service life of 12 years.",
+    "expected": "SUPPORTED",
+    "required_quote": "The vessel journey took 12 hours.",
+    "excluded_quotes": [
+      "The engine has a service life of 12 years."
+    ],
+    "gold_rationale": "Matching numeral with a different duration metric is not proof of travel duration."
+  }
+]

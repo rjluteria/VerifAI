@@ -177,8 +177,8 @@ def retry_delay(value):
 class Models:
     def __init__(self):
         self.names = [
-            os.getenv("PRIMARY_MODEL", "deepseek-ai/deepseek-v4.1-flash"),
-            os.getenv("FALLBACK_MODEL", "openai/gpt-oss-20b"),
+            os.getenv("PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
+            os.getenv("FALLBACK_MODEL", "poolside/laguna-xs-2.1"),
         ]
         self.key = os.getenv("NVIDIA_API_KEY", "")
 
@@ -209,7 +209,7 @@ class Models:
                 ),
             }
         except ModelError as exc:
-            standby = os.getenv("REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash")
+            standby = os.getenv("REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b")
             if not standby or standby in self.names:
                 raise
             return {
@@ -402,7 +402,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                         # Parsing can use another extractor; factual checks still
                         # belong to this reviewer and preserve its actual identity.
                         parser_model = os.getenv(
-                            "REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash"
+                            "REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b"
                         )
                         if parser_model and parser_model != name:
                             assertions, limitations = self.extract(
@@ -638,7 +638,7 @@ standalone second assertion is not an exact quotation of that response."""
                 names
                 if names is not None
                 else self.names
-                + [os.getenv("REVIEW_FALLBACK_MODEL", "z-ai/glm-5.3-flash")]
+                + [os.getenv("REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b")]
             )
             for name in dict.fromkeys(n for n in candidates if n):
                 request = {"response": chunk, "context": context}

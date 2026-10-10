@@ -43,3 +43,8 @@ The separate `numerical-bounds.json` corpus has ten supplied-evidence cases. A l
 ## Measurement-conflict controls
 
 The separate `measurement-conflicts.json` corpus contains four prelabelled supplied-evidence controls for unresolved equal-credibility measurements, a documented correction, a third value contradicted by both measurements, and fixed-unit equivalence. Conflicting values do not necessarily produce conflicting verdicts about a claim. These controls reproduce a discovered boundary regression; the original 81 cases and fixed-source expected categories remain unchanged. Report this overlapping supplemental cohort separately with `--dataset evaluations/measurement-conflicts.json`. Current provider validation is pending.
+
+
+## Quotation measurement controls
+
+The separate `quotation-metrics.json` corpus contains four prelabelled controls distinguishing axial rotation from a solar-day cycle, battery runtime from useful lifetime, and travel duration from engine service life. Each fixes the required decisive quotation and an excluded quotation about a different metric before model calls. The optional runner checks these annotations as well as the category and exact copied text. These specific quotation checks are not a general semantic scorer; broader source context still requires separate review. Keep this supplemental cohort separate from the original 81 cases. Current candidate validation is pending.

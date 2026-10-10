@@ -35,6 +35,12 @@ def run(case):
         "result": result,
         "correct": result["label"] == case["expected"],
         "quotation_provenance": all(q in case["evidence"] for q in result["quotes"]),
+        "quotation_relevance": (
+            case["required_quote"] in result["quotes"]
+            and not any(q in result["quotes"] for q in case.get("excluded_quotes", []))
+            if "required_quote" in case
+            else None
+        ),
         "elapsed_ms": round((time.monotonic() - started) * 1000),
     }
 
@@ -57,4 +63,13 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=2) as pool:
             )
         )
         print(row["id"], row["result"]["label"], row["correct"], flush=True)
-raise SystemExit(0 if all(r["correct"] for r in rows) else 1)
+raise SystemExit(
+    0
+    if all(
+        r["correct"]
+        and r["quotation_provenance"]
+        and r["quotation_relevance"] is not False
+        for r in rows
+    )
+    else 1
+)

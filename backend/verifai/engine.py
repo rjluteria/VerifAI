@@ -369,24 +369,52 @@ def classify(models, claim, evidence):
             "reviews": assessments,
             **diagnostic,
         }
-    quotes = list(dict.fromkeys(q for row in assessments for q in row["quotes"]))
+    if assessments[0]["label"] == "PARTIALLY_SUPPORTED":
+        # Partial reviews may quote complementary supported/missing assertions.
+        # Preserve their union rather than dropping one side of the decision.
+        return {
+            "label": assessments[0]["label"],
+            "reason": assessments[0]["reason"],
+            "quotes": list(
+                dict.fromkeys(q for row in assessments for q in row["quotes"])
+            ),
+            "reviews": assessments,
+            **(
+                {
+                    "quote_spans": [
+                        dict(text=text, start=start, end=end)
+                        for text, start, end in dict.fromkeys(
+                            (span["text"], span["start"], span["end"])
+                            for row in assessments
+                            for span in row.get("quote_spans", [])
+                        )
+                    ]
+                }
+                if any("quote_spans" in row for row in assessments)
+                else {}
+            ),
+            **diagnostic,
+        }
+    # Each validated review supplies a complete evidence set for its verdict.
+    # Keep one whole set rather than combining optional/background quotations
+    # from both reviewers or intersecting away material compound assertions.
+    selected_review = min(
+        assessments,
+        key=lambda row: (
+            sum(len(q) for q in dict.fromkeys(row["quotes"])),
+            len(row["quotes"]),
+            len(row.get("quote_spans", [])),
+        ),
+    )
     return {
-        "label": assessments[0]["label"],
-        "reason": assessments[0]["reason"],
-        "quotes": quotes,
+        "label": selected_review["label"],
+        "reason": selected_review["reason"],
+        "quotes": list(dict.fromkeys(selected_review["quotes"])),
         "reviews": assessments,
+        "quotation_review_model": selected_review["model"],
         **(
-            {
-                "quote_spans": [
-                    dict(text=text, start=start, end=end)
-                    for text, start, end in dict.fromkeys(
-                        (span["text"], span["start"], span["end"])
-                        for row in assessments
-                        for span in row.get("quote_spans", [])
-                    )
-                ]
-            }
-            if any("quote_spans" in row for row in assessments)
+            {"quote_spans": [dict(span) for span in selected_review["quote_spans"]]}
+            if "quote_spans" in selected_review
             else {}
         ),
         **diagnostic,

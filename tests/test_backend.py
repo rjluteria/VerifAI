@@ -448,6 +448,62 @@ class EngineTests(unittest.TestCase):
         self.assertIn("atomic_checks", calls[-1])
         self.assertEqual(result["quotes"], ["The depot has 6 bays and 70 staff."])
 
+    def test_complete_review_set_excludes_other_reviewer_wrong_metric_extra(self):
+        axial = "Planet Q rotates once on its axis in 7 days."
+        solar = "Its solar-day cycle is 1 day."
+        evidence = axial + " " + solar
+        models = Reviewers()
+        models.judge = lambda name, *args: {
+            "label": "CONTRADICTED",
+            "reason": "Axial and solar cycles both differ."
+            if name == "primary"
+            else "The seven-day axial rotation contradicts one day.",
+            "quotes": [axial, solar] if name == "primary" else [axial],
+        }
+        result = classify(
+            models, "Planet Q rotates once on its axis in 1 day.", evidence
+        )
+        self.assertEqual(result["label"], "CONTRADICTED")
+        self.assertEqual(result["quotes"], [axial])
+        self.assertEqual(
+            result["reason"], "The seven-day axial rotation contradicts one day."
+        )
+        self.assertEqual(result["quotation_review_model"], "secondary")
+        self.assertEqual(len(result["reviews"]), 2)
+        self.assertIn(solar, result["reviews"][0]["quotes"])
+
+    def test_complete_review_set_keeps_compound_assertions_and_selected_offsets(self):
+        first = "The station opened in 2016."
+        second = "The station has four platforms."
+        evidence = first + " " + second
+        spans = [
+            {"text": first, "start": 0, "end": len(first)},
+            {"text": second, "start": len(first) + 1, "end": len(evidence)},
+        ]
+        models = Reviewers()
+        models.judge = lambda name, *args: {
+            "label": "SUPPORTED",
+            "reason": "Both opening date and platform count match.",
+            "quotes": [first, second] if name == "primary" else [evidence],
+            "quote_spans": spans
+            if name == "primary"
+            else [{"text": evidence, "start": 0, "end": len(evidence)}],
+        }
+        result = classify(
+            models, "The station opened in 2016 and has four platforms.", evidence
+        )
+        self.assertEqual(result["label"], "SUPPORTED")
+        self.assertEqual(result["quotes"], [first, second])
+        self.assertEqual(result["quote_spans"], spans)
+        self.assertEqual(
+            quoted_snippets(result, [{"text": evidence, "start": 100}]),
+            [
+                {**span, "start": span["start"] + 100, "end": span["end"] + 100}
+                for span in spans
+            ],
+        )
+        self.assertEqual(len(result["reviews"]), 2)
+
     def test_repeated_quote_preserves_the_model_selected_source_occurrence(self):
         text = "Alpha is the first enclosure. Its height is 121 metres.\n\nBeta is the second enclosure. Its height is 121 metres."
         models = Models()
@@ -915,7 +971,7 @@ class EngineTests(unittest.TestCase):
         )
         self.assertEqual(row["model"], model.names[1])
         self.assertEqual(row["label"], "PARTIALLY_SUPPORTED")
-        self.assertEqual(row["decomposition_model"], "z-ai/glm-5.3-flash")
+        self.assertEqual(row["decomposition_model"], "openai/gpt-oss-20b")
         self.assertNotIn("requested_model", row)
 
     def test_reassessment_waits_once_for_observed_reviewer_cooldown(self):
