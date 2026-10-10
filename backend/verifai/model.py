@@ -80,7 +80,12 @@ For example 'the inscription proves who built the temple' is CONTRADICTED by
 'its authenticity is disputed and it cannot establish who built the temple'.
 A simple claim about who built the temple remains UNVERIFIED on that evidence.
 Any directly contradicted assertion makes CONTRADICTED, except unresolved credible
-source conflict makes UNVERIFIED. An explicit correction identifying the earlier
+source conflict about whether the claim is true makes UNVERIFIED. Distinguish
+conflicting source values from conflicting verdicts: if every credible reported
+value contradicts the claimed value, their disagreement with each other does not
+erase that shared contradiction. For example, two equally credible measurements
+of 20 metres and 30 metres leave a claim of 20 metres UNVERIFIED, but both
+contradict a claim of 40 metres on the same measurement basis. An explicit correction identifying the earlier
 entry as erroneous resolves that earlier entry; do not treat a documented
 correction as an unresolved conflict. Read both the old entry and its correction. PARTIALLY_SUPPORTED requires separable assertions,
 some supported, others missing, none contradicted. Missing evidence, unresolved
@@ -323,8 +328,11 @@ Explicitly distinguish: supported assertions, missing assertions, and assertions
 with incompatible evidence. An incompatible material assertion takes precedence
 over partial support, EXCEPT when equally credible evidence conflicts without
 resolution: that conflict remains UNVERIFIED, even if one measurement supports
-the claim and another contradicts it. Do not choose one conflicting value merely
-because it contradicts the claim. A documented correction can resolve a conflict;
+the claim and another contradicts it. If ALL credible reported values contradict
+the claim on the same measurement basis, use CONTRADICTED: disagreement between
+those values does not erase their shared contradiction of the claim. Do not choose
+one conflicting value merely because it contradicts the claim while another
+supports it. A documented correction can resolve a conflict;
 an unresolved discrepancy cannot. Preserve missing-evidence and numerical-scope
 rules: compatibility with a bound or interval does not establish a point estimate.
 Partial support needs at least two separable meaningful
