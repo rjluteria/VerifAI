@@ -46,6 +46,51 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_unresolved_equally_credible_measurements_do_not_choose_a_value(self):
+        for subject, unit, first, second in (
+            ("building", "metres", "80", "90"),
+            ("bridge", "feet", "120.5", "121.5"),
+        ):
+            evidence = f"Two equally credible measurements report {first} {unit} and {second} {unit} for the same {subject}. No explanation resolves the discrepancy."
+            for value in (first, second):
+                for label in ("SUPPORTED", "CONTRADICTED"):
+                    with self.subTest(subject=subject, value=value, label=label):
+                        result = classify(
+                            Reviewers([label, label]),
+                            f"The {subject} is {value} {unit} tall.",
+                            evidence,
+                        )
+                        self.assertEqual(result["label"], "UNVERIFIED")
+                        self.assertEqual(result["quotes"], [])
+
+    def test_measurement_conflict_guard_preserves_resolutions_and_scope(self):
+        claim = "The building is 80 metres tall."
+        evidence = "Two equally credible measurements report 80 metres and 90 metres for the same building. No explanation resolves the discrepancy."
+        cases = (
+            (claim, evidence + " A documented correction establishes 80 metres."),
+            (claim, evidence.replace("equally credible ", "")),
+            (
+                claim,
+                evidence.replace("No explanation resolves", "A correction resolves"),
+            ),
+            (claim, evidence + " The building opened in 2001."),
+            (claim.replace("building", "bridge"), evidence),
+            (claim.replace("metres", "feet"), evidence),
+            (claim, evidence.replace("90 metres", "80 metres")),
+            (claim.replace("80", "100"), evidence),
+            (claim[:-1] + " and opened in 2001.", evidence),
+            (claim.replace("is 80", "is approximately 80"), evidence),
+        )
+        for current_claim, current_evidence in cases:
+            with self.subTest(claim=current_claim, evidence=current_evidence):
+                result = classify(
+                    Reviewers(["UNVERIFIED", "UNVERIFIED"]),
+                    current_claim,
+                    current_evidence,
+                )
+                self.assertEqual(result["reason"], "review")
+                self.assertEqual(len(result["reviews"]), 2)
+
     def test_source_prefetch_is_bounded_and_preserves_url_attribution(self):
         barrier = threading.Barrier(2)
         active = 0

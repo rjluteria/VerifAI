@@ -100,6 +100,39 @@ def partition_count(claim, evidence):
 
 
 def bounded_abstention(claim, evidence):
+    # A closed pair of explicitly equally credible, unresolved measurements
+    # cannot establish either reported point. Preserve identity and units; do
+    # not suppress corrections, additional findings or independently contradicted
+    # values outside the reported pair.
+    measurement = re.fullmatch(
+        r"The ([A-Za-z][A-Za-z0-9 -]{0,100}) is (\d+(?:\.\d+)?) "
+        r"(metres|meters|centimetres|centimeters|kilometres|kilometers|feet|inches) "
+        r"(?:tall|long|wide|high|deep)\.?",
+        claim.strip(),
+        re.IGNORECASE,
+    )
+    if measurement and not re.search(
+        r"\b(?:and|or|not|only|about|approximately)\b", claim, re.IGNORECASE
+    ):
+        unresolved = re.fullmatch(
+            r"Two equally credible measurements report (\d+(?:\.\d+)?) "
+            + re.escape(measurement[3])
+            + r" and (\d+(?:\.\d+)?) "
+            + re.escape(measurement[3])
+            + r" for the same "
+            + re.escape(measurement[1])
+            + r"\.\s*No explanation resolves the discrepancy\.",
+            evidence.strip(),
+            re.IGNORECASE,
+        )
+        if unresolved:
+            first, second = map(Decimal, unresolved.groups())
+            if first != second and Decimal(measurement[2]) in {first, second}:
+                return {
+                    "label": "UNVERIFIED",
+                    "reason": "The equally credible measurements disagree on the claimed point and explicitly leave the discrepancy unresolved.",
+                    "quotes": [],
+                }
     # Closed observational-only grammar states absence of causal proof, not
     # disproof. Additional factual sentences fall outside this guard.
     if (

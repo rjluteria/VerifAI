@@ -320,8 +320,14 @@ need at least one ID. For missing evidence IDs may be empty. Never use outside f
             instruction += """ A prior review pair was incomplete or disagreed.
 Perform one fresh assessment from the evidence without being told other labels.
 Explicitly distinguish: supported assertions, missing assertions, and assertions
-with incompatible evidence. ANY incompatible material assertion takes precedence
-over partial support. Partial support needs at least two separable meaningful
+with incompatible evidence. An incompatible material assertion takes precedence
+over partial support, EXCEPT when equally credible evidence conflicts without
+resolution: that conflict remains UNVERIFIED, even if one measurement supports
+the claim and another contradicts it. Do not choose one conflicting value merely
+because it contradicts the claim. A documented correction can resolve a conflict;
+an unresolved discrepancy cannot. Preserve missing-evidence and numerical-scope
+rules: compatibility with a bound or interval does not establish a point estimate.
+Partial support needs at least two separable meaningful
 assertions with at least one supported, at least one missing, and NONE contradicted.
 Different properties of one object are separable; do not fuse length and mass or
 opening date and pupil count into an indivisible assertion. Preserve all qualifiers.
