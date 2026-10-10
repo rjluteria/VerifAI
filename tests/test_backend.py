@@ -88,7 +88,9 @@ class EngineTests(unittest.TestCase):
                     current_claim,
                     current_evidence,
                 )
-                self.assertEqual(result["reason"], "review")
+                self.assertEqual(
+                    [row["reason"] for row in result["reviews"]], ["review", "review"]
+                )
                 self.assertEqual(len(result["reviews"]), 2)
 
     def test_source_prefetch_is_bounded_and_preserves_url_attribution(self):
@@ -216,7 +218,9 @@ class EngineTests(unittest.TestCase):
             with self.subTest(claim=claim, evidence=evidence):
                 result = classify(Reviewers([label, label]), claim, evidence)
                 self.assertEqual(result["label"], label)
-                self.assertEqual(result["reason"], "review")
+                self.assertEqual(
+                    [row["reason"] for row in result["reviews"]], ["review", "review"]
+                )
                 self.assertEqual(len(result["reviews"]), 2)
 
     def test_explicit_partition_uses_subgroup_count_with_exact_source_quote(self):
@@ -283,7 +287,9 @@ class EngineTests(unittest.TestCase):
                     Reviewers(["UNVERIFIED", "UNVERIFIED"]), claim, evidence
                 )
                 self.assertEqual(result["label"], "UNVERIFIED")
-                self.assertEqual(result["reason"], "review")
+                self.assertEqual(
+                    [row["reason"] for row in result["reviews"]], ["review", "review"]
+                )
                 self.assertEqual(len(result["reviews"]), 2)
 
     def test_unqualified_geographic_size_does_not_guess_population(self):
@@ -341,7 +347,9 @@ class EngineTests(unittest.TestCase):
             with self.subTest(claim=claim, evidence=evidence):
                 result = classify(Reviewers([label, label]), claim, evidence)
                 self.assertEqual(result["label"], label)
-                self.assertEqual(result["reason"], "review")
+                self.assertEqual(
+                    [row["reason"] for row in result["reviews"]], ["review", "review"]
+                )
                 self.assertEqual(len(result["reviews"]), 2)
 
     def test_temporal_absence_guard_requires_matching_increase_and_closed_context(self):
@@ -466,11 +474,33 @@ class EngineTests(unittest.TestCase):
         self.assertEqual(result["label"], "CONTRADICTED")
         self.assertEqual(result["quotes"], [axial])
         self.assertEqual(
-            result["reason"], "The seven-day axial rotation contradicts one day."
+            result["reason"], "The quoted source text contradicts this claim."
         )
         self.assertEqual(result["quotation_review_model"], "secondary")
         self.assertEqual(len(result["reviews"]), 2)
         self.assertIn(solar, result["reviews"][0]["quotes"])
+
+    def test_final_explanation_cannot_add_unquoted_measurements(self):
+        axial = "Planet Q rotates once on its axis in seven days."
+        models = Reviewers()
+        models.judge = lambda name, *args: {
+            "label": "CONTRADICTED",
+            "reason": "Rotation is seven days or a one-day solar cycle."
+            if name == "primary"
+            else "The axial period is seven days.",
+            "quotes": [axial],
+        }
+        result = classify(
+            models, "Planet Q rotates once on its axis in one day.", axial
+        )
+        self.assertEqual(result["label"], "CONTRADICTED")
+        self.assertEqual(result["quotes"], [axial])
+        self.assertEqual(
+            result["reason"], "The quoted source text contradicts this claim."
+        )
+        self.assertNotIn("solar", result["reason"])
+        self.assertIn("solar", result["reviews"][0]["reason"])
+        self.assertEqual(len({row["model"] for row in result["reviews"]}), 2)
 
     def test_complete_review_set_keeps_compound_assertions_and_selected_offsets(self):
         first = "The station opened in 2016."

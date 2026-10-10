@@ -8,6 +8,16 @@ from urllib.parse import urlsplit
 
 from .model import ModelError, decomposition_scope
 
+# Final reasons describe the validated category only. Free-form reviewer prose
+# can introduce measurements or facts absent from the admitted quotations.
+# Keep that prose in raw review diagnostics rather than presenting it as proof.
+EVIDENCE_REASONS = {
+    "SUPPORTED": "The quoted source text supports this claim.",
+    "CONTRADICTED": "The quoted source text contradicts this claim.",
+    "PARTIALLY_SUPPORTED": "The quoted source text supports only part of this claim.",
+    "UNVERIFIED": "The source evidence is insufficient to verify this claim.",
+}
+
 
 def arithmetic(claim, evidence):
     # A bounded self-contained percentage expression can be checked without guessed operands.
@@ -374,7 +384,7 @@ def classify(models, claim, evidence):
         # Preserve their union rather than dropping one side of the decision.
         return {
             "label": assessments[0]["label"],
-            "reason": assessments[0]["reason"],
+            "reason": EVIDENCE_REASONS[assessments[0]["label"]],
             "quotes": list(
                 dict.fromkeys(q for row in assessments for q in row["quotes"])
             ),
@@ -408,7 +418,7 @@ def classify(models, claim, evidence):
     )
     return {
         "label": selected_review["label"],
-        "reason": selected_review["reason"],
+        "reason": EVIDENCE_REASONS[selected_review["label"]],
         "quotes": list(dict.fromkeys(selected_review["quotes"])),
         "reviews": assessments,
         "quotation_review_model": selected_review["model"],
