@@ -35,3 +35,7 @@ Fault tests exercise provider/network failures, unavailable reviewers, malformed
 Private stage traces distinguish model calls, search, retrieval, ranking, retries, cooldowns, serialization and polling. Nested spans overlap and must not be added as independent costs. Compare the same workload where possible, disclose model/configuration differences and preserve rejected experiments. Percentiles from four cases are descriptive, not dependable production tail estimates. Docker probes with mocked models are resource tests, not factual-accuracy or hosted-load tests.
 
 Full source text, private browser captures and development diagnostics are excluded from this repository. The public classification datasets and deterministic tests are reproducible here; the private controlled, snapshot, live and native acceptance artifacts are separate evidence with the limits described above. See [acceptance status](../ACCEPTANCE.md) for the measured revision and remaining gates.
+
+## Numerical-bound controls
+
+The separate `numerical-bounds.json` corpus has ten supplied-evidence cases. A lower or upper bound can be compatible with a point estimate without establishing it. Controls also preserve valid exact-value implications, strict inequality contradiction, rounding, additional point measurements, and coincident inclusive bounds. These cases do not alter the frozen historic or broad corpus, and no measured result is asserted before a completed evaluation.

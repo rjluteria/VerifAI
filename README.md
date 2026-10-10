@@ -78,6 +78,8 @@ python scripts/evaluate_accuracy.py --dataset evaluations/historic-audited.json 
 python scripts/evaluate_accuracy.py --dataset evaluations/compatibility-controls.json --output compatibility-run.json
 ```
 
+Ten separate numerical-bound controls distinguish interval compatibility from evidence for a specific point estimate. Run them with `--dataset evaluations/numerical-bounds.json`; they remain a separate cohort with results pending validation.
+
 The broad evidence corpus covers 25 cases across different domains and metric-scope holdouts. The separate historic corpus retains 56 regression cases. Six supplemental currency/unit controls are a separate, partly overlapping cohort; do not sum them with the historic/broad total. These runs test supplied-evidence classification, not full extraction, live discovery, browser access or semantic quotation accuracy. Existing result files cannot be overwritten. The separate cohorts and audit rules are described in [the evaluation methodology](evaluations/METHODOLOGY.md). Gold-label corrections and preserved original-run distinctions are documented in `evaluations/GOLD_ADJUDICATION.md`. A perfect measured run is not a universal accuracy guarantee.
 
 ## Known limitations

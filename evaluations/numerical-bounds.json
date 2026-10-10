@@ -1,0 +1,72 @@
+[
+  {
+    "id": "lower-bound-approximate-point",
+    "claim": "The solar array supplies approximately 61 percent of site electricity.",
+    "evidence": "The solar array supplies more than 60 percent of site electricity.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "A one-sided lower bound permits many values and does not establish the claimed rounded point estimate."
+  },
+  {
+    "id": "upper-bound-approximate-point",
+    "claim": "The solar array supplies approximately 59 percent of site electricity.",
+    "evidence": "The solar array supplies less than 60 percent of site electricity.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "A one-sided upper bound does not narrow the actual value to the claimed precision."
+  },
+  {
+    "id": "lower-bound-exact-point",
+    "claim": "The solar array supplies exactly 61 percent of site electricity.",
+    "evidence": "The solar array supplies more than 60 percent of site electricity.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "Compatibility with a lower bound is not entailment of the exact point."
+  },
+  {
+    "id": "upper-bound-exact-point",
+    "claim": "The solar array supplies exactly 59 percent of site electricity.",
+    "evidence": "The solar array supplies less than 60 percent of site electricity.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "Compatibility with an upper bound is not entailment of the exact point."
+  },
+  {
+    "id": "exact-value-supports-strict-bound",
+    "claim": "The solar array supplies more than 60 percent of site electricity.",
+    "evidence": "The solar array supplies 61 percent of site electricity.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The explicit value 61 is greater than 60 on the same denominator."
+  },
+  {
+    "id": "exact-value-refutes-strict-bound",
+    "claim": "The solar array supplies more than 60 percent of site electricity.",
+    "evidence": "The solar array supplies 60 percent of site electricity.",
+    "expected": "CONTRADICTED",
+    "gold_rationale": "A value equal to the threshold does not satisfy a strict greater-than claim."
+  },
+  {
+    "id": "rounded-point-support",
+    "claim": "The solar array supplies approximately 61 percent of site electricity.",
+    "evidence": "The solar array supplies 61.2 percent of site electricity.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The explicit measured point rounds to the claimed whole-percent precision."
+  },
+  {
+    "id": "bound-and-explicit-point",
+    "claim": "The solar array supplies approximately 61 percent of site electricity.",
+    "evidence": "The solar array supplies more than 60 percent of site electricity. The measured share is 61.2 percent of site electricity.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "The additional explicit point establishes the claimed rounded value despite the weaker bound."
+  },
+  {
+    "id": "coincident-inclusive-bounds",
+    "claim": "The solar array supplies exactly 61 percent of site electricity.",
+    "evidence": "The solar array supplies at least 61 percent and at most 61 percent of site electricity.",
+    "expected": "SUPPORTED",
+    "gold_rationale": "Coincident inclusive lower and upper bounds establish the exact point."
+  },
+  {
+    "id": "broad-range-point",
+    "claim": "The solar array supplies exactly 61 percent of site electricity.",
+    "evidence": "The solar array supplies between 60 and 62 percent of site electricity.",
+    "expected": "UNVERIFIED",
+    "gold_rationale": "The interval contains but does not uniquely establish the exact point."
+  }
+]

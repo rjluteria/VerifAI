@@ -122,6 +122,16 @@ is UNVERIFIED, not SUPPORTED or CONTRADICTED. This is not a blanket exemption fo
 approximate claims: a journey taking 5 days explicitly contradicts a claim of
 about 1 hour on the same measurement basis. Preserve all qualifiers and abstain
 when compatibility depends on an unstated uncertainty range.
+An inequality or broad interval is not a measured point estimate. Compatibility
+does not establish entailment: evidence "more than 60 percent" cannot establish
+"approximately 61 percent" or "exactly 61 percent"; many other values also meet
+that lower bound. The same applies to upper bounds such as "less than 60 percent"
+versus "approximately 59 percent". These point claims remain UNVERIFIED unless
+other relevant evidence narrows the value to the claimed precision. Do not use a
+source's authority or outside knowledge to fill that gap. Conversely, an explicit
+61 percent value establishes "more than 60 percent", and an explicit 60 percent
+value contradicts that strict inequality. Preserve the direction, strictness,
+units and denominator of every bound during both initial and fresh assessments.
 Return exactly JSON {"label": one of SUPPORTED/PARTIALLY_SUPPORTED/CONTRADICTED/UNVERIFIED,
 "reason": concise explanation, "quotes": [exact evidence substrings grounding the decision]}.
 An atomic assertion cannot be PARTIALLY_SUPPORTED merely because it is related to
