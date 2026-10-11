@@ -2,6 +2,7 @@ import json
 import os
 import sys
 import threading
+import time
 import unittest
 import urllib.error
 import urllib.request
@@ -78,8 +79,16 @@ class RuntimeContract(unittest.TestCase):
 
     def test_cpu_clock_is_observed_own_process(self):
         before = process_metrics()
-        sum(i * i for i in range(100000))
-        after = process_metrics()
+        # Some platforms expose a coarse process CPU clock. Perform bounded
+        # work until an actual tick rather than assume one small loop spans it.
+        deadline = time.monotonic() + 2
+        after = before
+        while (
+            after["cpu_clock_seconds"] == before["cpu_clock_seconds"]
+            and time.monotonic() < deadline
+        ):
+            sum(i * i for i in range(100000))
+            after = process_metrics()
         self.assertGreater(after["cpu_clock_seconds"], before["cpu_clock_seconds"])
         self.assertGreaterEqual(
             after["observation_elapsed_seconds"], before["observation_elapsed_seconds"]
