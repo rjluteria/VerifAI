@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from .engine import Engine
 from .model import Models
+from .runtime import process_metrics
 from .sources import discovery, document
 
 
@@ -54,6 +55,7 @@ def strict_json(raw):
 class Service:
     def __init__(self, engine):
         self.engine = engine
+        self.runtime_diagnostics = os.getenv("ENABLE_RUNTIME_DIAGNOSTICS") == "1"
         self.secret = os.getenv("SESSION_SECRET", secrets.token_hex(32)).encode()
         self.origins = set(filter(None, os.getenv("ALLOWED_ORIGINS", "").split(",")))
         self.lock = threading.RLock()
@@ -254,6 +256,10 @@ def handler(service):
                 owner = service.identity(auth[7:], origin)
             except ValueError:
                 return self.reply(401, {"error": "session"})
+            if not post and self.path == "/v1/runtime":
+                if not service.runtime_diagnostics:
+                    return self.reply(404, {"error": "route"})
+                return self.reply(200, process_metrics())
             if not post and self.path.startswith("/v1/jobs/"):
                 key = self.path.removeprefix("/v1/jobs/")
                 with service.lock:
