@@ -1,10 +1,5 @@
-import {
-  eligible,
-  savedHistory,
-  validResult,
-  backend,
-  summary,
-} from "./core.js";
+import { eligible, savedHistory, validResult, summary } from "./core.js";
+import { SERVICE_ORIGIN } from "./config.js";
 let queue = Promise.resolve();
 function serialized(action) {
   const task = queue.then(action);
@@ -15,6 +10,11 @@ async function init() {
   await chrome.storage.session.setAccessLevel({
     accessLevel: "TRUSTED_CONTEXTS",
   });
+  // Old Settings overrides cannot redirect any request after an upgrade.
+  await chrome.storage.local.remove("backendUrl");
+  const { auth } = await chrome.storage.session.get("auth");
+  if (auth && auth.origin !== SERVICE_ORIGIN)
+    await chrome.storage.session.remove("auth");
   const local = await chrome.storage.local.get(["enabled"]);
   const session = await chrome.storage.session.get("on");
   if (session.on === undefined)
@@ -87,9 +87,10 @@ async function submissionActive(value, requireResponse = true) {
   }
 }
 async function api(path, options = {}, submission) {
-  const { backendUrl } = await chrome.storage.local.get("backendUrl");
-  if (!backendUrl) throw Error("Configure the hosted service in Settings.");
-  const origin = backend(backendUrl);
+  await initialized;
+  const origin = SERVICE_ORIGIN;
+  if (!(await chrome.permissions.contains({ origins: [origin + "/*"] })))
+    throw Error("Grant hosted service access in Settings.");
   let { auth } = await chrome.storage.session.get("auth");
   if (!auth || auth.expires <= Date.now() || auth.origin !== origin) {
     const headers = {
@@ -395,7 +396,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     )
       return { error: "sender" };
     if (message.type === "saveSettings") {
-      const origin = backend(message.backendUrl);
+      if (Object.hasOwn(message, "backendUrl"))
+        return { error: "Backend overrides are not supported." };
+      const origin = SERVICE_ORIGIN;
       if (
         typeof message.historyEnabled !== "boolean" ||
         !["", "24h", "7d", "30d", "manual"].includes(message.retention) ||
@@ -407,7 +410,6 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       await serialized(async () => {
         const local = await chrome.storage.local.get("history");
         await chrome.storage.local.set({
-          backendUrl: origin,
           historyEnabled: message.historyEnabled,
           retention: message.retention,
           history: message.historyEnabled

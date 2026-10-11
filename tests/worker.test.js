@@ -4,9 +4,10 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { webcrypto } from "node:crypto";
 import * as core from "../extension/core.js";
+import { SERVICE_ORIGIN } from "../extension/config.js";
 const source = fs
   .readFileSync(new URL("../extension/worker.js", import.meta.url), "utf8")
-  .replace(/^import [\s\S]*?;\r?\n/, "");
+  .replace(/^import [\s\S]*?;\r?\n/gm, "");
 function area(initial = {}) {
   const data = structuredClone(initial);
   return {
@@ -84,6 +85,7 @@ async function setup({
   };
   const context = vm.createContext({
     ...core,
+    SERVICE_ORIGIN,
     chrome,
     crypto: webcrypto,
     URL,
@@ -444,7 +446,6 @@ test("history cannot enable without retention and content senders cannot change 
   const f = await setup();
   const request = {
     type: "saveSettings",
-    backendUrl: "https://verifai-example.onrender.com",
     historyEnabled: true,
     retention: "",
   };
@@ -488,7 +489,6 @@ test("settings changes and saves are serialized so disabled history stays empty"
   const disable = f.send(
     {
       type: "saveSettings",
-      backendUrl: "https://verifai-example.onrender.com",
       historyEnabled: false,
       retention: "manual",
     },
@@ -503,7 +503,6 @@ test("extension settings in a Chrome tab can save, but forged page origins canno
   const f = await setup();
   const request = {
     type: "saveSettings",
-    backendUrl: "https://verifai-example.onrender.com",
     historyEnabled: false,
     retention: "",
   };
@@ -547,7 +546,7 @@ test("foreground polling is throttled and delivers honest stage updates", async 
     session: {
       on: true,
       auth: {
-        origin: "https://test.onrender.com",
+        origin: SERVICE_ORIGIN,
         token: "test-token",
         expires: Date.now() + 60000,
       },
@@ -585,7 +584,7 @@ test("late result from superseded job cannot overwrite its replacement", async (
     session: {
       on: true,
       auth: {
-        origin: "https://test.onrender.com",
+        origin: SERVICE_ORIGIN,
         token: "test-token",
         expires: Date.now() + 60000,
       },
@@ -658,6 +657,68 @@ test("same-URL eligibility is rechecked after session creation before posting re
     citations: [],
   });
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(posts, ["https://test.onrender.com/v1/session"]);
+  assert.deepEqual(posts, [SERVICE_ORIGIN + "/v1/session"]);
   assert.ok(f.eligibilityChecks.length >= 2);
+});
+
+test("legacy endpoint and auth cannot redirect configured verification", async () => {
+  const urls = [];
+  const f = await setup({
+    local: { backendUrl: "https://other.onrender.com", historyEnabled: false },
+    session: {
+      on: true,
+      auth: {
+        origin: "https://other.onrender.com",
+        token: "legacy",
+        expires: Date.now() + 60000,
+      },
+    },
+    fetcher: async (url, options) => {
+      urls.push(url);
+      assert.notEqual(options.headers.Authorization, "Bearer legacy");
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "configured", expires_in: 3600 }
+            : url.endsWith("/v1/verify")
+              ? { job: "new" }
+              : { stage: "Verifying evidence" },
+      };
+    },
+  });
+  assert.equal(f.chrome.storage.local.data.backendUrl, undefined);
+  assert.equal(f.chrome.storage.session.data.auth, undefined);
+  assert.equal(
+    (
+      await f.send({
+        type: "verify",
+        id: "configured",
+        revision: "d".repeat(64),
+        text: "A fact.",
+        citations: [],
+        url: "https://chatgpt.com/c/test",
+      })
+    ).accepted,
+    true,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.ok(urls.includes(SERVICE_ORIGIN + "/v1/session"));
+  assert.ok(urls.includes(SERVICE_ORIGIN + "/v1/verify"));
+  assert.ok(urls.every((url) => new URL(url).origin === SERVICE_ORIGIN));
+  assert.equal(
+    (
+      await f.send(
+        {
+          type: "saveSettings",
+          backendUrl: "https://other.onrender.com",
+          historyEnabled: false,
+          retention: "",
+        },
+        { url: "chrome-extension://test/settings.html" },
+      )
+    ).error,
+    "Backend overrides are not supported.",
+  );
 });

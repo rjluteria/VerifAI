@@ -1,10 +1,5 @@
-import { backend } from "./core.js";
-const values = await chrome.storage.local.get([
-  "backendUrl",
-  "historyEnabled",
-  "retention",
-]);
-document.querySelector("#backend").value = values.backendUrl || "";
+import { SERVICE_ORIGIN } from "./config.js";
+const values = await chrome.storage.local.get(["historyEnabled", "retention"]);
 document.querySelector("#history").checked = Boolean(values.historyEnabled);
 document.querySelector("#retention").value = values.retention || "";
 document.querySelector("#identity").textContent =
@@ -14,18 +9,16 @@ document
   .addEventListener("submit", async (event) => {
     event.preventDefault();
     try {
-      const origin = backend(document.querySelector("#backend").value);
       const historyEnabled = document.querySelector("#history").checked;
       const retention = document.querySelector("#retention").value;
       if (historyEnabled && !retention)
         throw Error("Choose a retention period first.");
       const granted = await chrome.permissions.request({
-        origins: [origin + "/*"],
+        origins: [SERVICE_ORIGIN + "/*"],
       });
       if (!granted) throw Error("Hosted service access was not granted.");
       const result = await chrome.runtime.sendMessage({
         type: "saveSettings",
-        backendUrl: origin,
         historyEnabled,
         retention,
       });

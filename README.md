@@ -21,7 +21,7 @@ Requirements: Chrome 120 or newer, Python 3.14, Node 24 or newer, and Docker for
 
 1. Deploy this directory to Render with `render.yaml`, using the Docker runtime. Configure `NVIDIA_API_KEY`, `TAVILY_API_KEY`, and `ALLOWED_ORIGINS` in the dashboard. The blueprint generates the session secret. Do not put credentials in the extension or repository.
 2. In Chrome's extension manager, enable developer mode and load `extension/` unpacked. Copy its ID into Render's `ALLOWED_ORIGINS` as `chrome-extension://ID`. An exact allowlist is required. Restart the service after updating environment settings.
-3. In VerifAI Settings, enter the exact HTTPS Render service origin and approve access to that origin. Normal extension users never supply a NVIDIA key.
+3. In VerifAI Settings, save the desired history preferences and approve access to the configured service. The service endpoint is developer-configured in the package; end users cannot edit it. Normal extension users never supply a NVIDIA key.
 4. Enable verification in the popup. It starts Off on installation; after first enablement it starts On in new browser sessions. Switching Off survives worker and extension reloads and lasts until manual enablement or the next browser session.
 
 The service does not automatically load `.env`. `.env.example` documents configuration names. Use deployment environment variables or export them securely in your local shell. Optional `ALLOW_KEYLESS_SEARCH=1` enables Tavily's limited development endpoint; it is off by default and is not a production capacity promise.
@@ -70,7 +70,7 @@ python scripts/package.py
 docker build -t verifai .
 ```
 
-Python can be invoked as `py -3` on Windows. The package script writes an installable extension ZIP under `dist/`. CI defines Linux, macOS and Windows checks and a container build. Publishing or merely defining that workflow does not establish that remote checks ran.
+Python can be invoked as `py -3` on Windows. The package script writes an installable extension ZIP under `dist/`. The packaged endpoint is configured in `extension/config.js`; old saved endpoint overrides are removed and cannot redirect requests. Developers can build a separate test ZIP with `python scripts/package.py --backend-origin https://your-test-service.onrender.com --output dist/test.zip`. This changes only that package and its exact optional host permission, not user preferences or tracked configuration. Configure the test service to allow that extension origin before using it. CI defines Linux, macOS and Windows checks and a container build. Publishing or merely defining that workflow does not establish that remote checks ran.
 
 Optional model evaluation (requires a locally configured `NVIDIA_API_KEY`). Keep result files outside the repository; they contain full model reasons and are local evaluation artifacts:
 

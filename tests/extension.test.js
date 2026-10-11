@@ -62,6 +62,6 @@ test("manifest permissions and private source boundary", () => {
   ]);
   assert.equal(JSON.stringify(manifest).includes("<all_urls>"), false);
   assert.deepEqual(manifest.optional_host_permissions, [
-    "https://*.onrender.com/*",
+    "https://verifai-ekan.onrender.com/*",
   ]);
 });
