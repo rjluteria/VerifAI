@@ -1,0 +1,24 @@
+[
+  {
+    "id": "both-periods-refute-but-only-axis-relevant",
+    "claim": "Planet R rotates once on its axis in 1 Earth day.",
+    "evidence": "Planet R has a solar-day cycle of 3 Earth days. Its axial rotation period is 7 Earth days.",
+    "expected": "CONTRADICTED",
+    "required_quote": "Its axial rotation period is 7 Earth days.",
+    "excluded_quotes": [
+      "Planet R has a solar-day cycle of 3 Earth days."
+    ],
+    "gold_rationale": "Both different period values differ from1day; only axial rotation can contradict the asserted measurement basis. Extra solar-day proof remains irrelevant."
+  },
+  {
+    "id": "both-durations-refute-but-only-runtime-relevant",
+    "claim": "Device R has a battery runtime of 2 hours.",
+    "evidence": "Device R has an expected useful lifetime of 9 years. Its measured battery runtime is 6 hours.",
+    "expected": "CONTRADICTED",
+    "required_quote": "Its measured battery runtime is 6 hours.",
+    "excluded_quotes": [
+      "Device R has an expected useful lifetime of 9 years."
+    ],
+    "gold_rationale": "Lifetime and runtime both differ numerically from2, but only runtime evidence grounds the claim; shared numerical incompatibility cannot justify wrong-metric proof."
+  }
+]

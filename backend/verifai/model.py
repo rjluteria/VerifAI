@@ -325,6 +325,16 @@ material assertion needed for this decision. Do not add loosely related backgrou
 navigation, copied repetitions, or alternative metrics merely because they share
 the subject. In particular a solar-day cycle and an axial/sidereal rotation period
 are different measurements; use the measurement actually asserted by the claim.
+Check EACH proposed ID against the asserted property, units, time period and
+measurement definition. A different property does not support or contradict the
+claim merely because its numerical value also differs from the claimed value.
+For CONTRADICTED, select only evidence incompatible with the SAME asserted
+property; exclude an unrelated measurement even when relevant evidence already
+establishes contradiction. Resolve a vague measurement name from definitions and
+qualifications elsewhere in the supplied evidence before selecting it. If the
+source distinguishes two meanings of that name, do not transfer a value between
+them or treat both as proof. Remove every unnecessary or wrong-property ID from
+the final quote_ids; one valid ID cannot make an irrelevant extra ID valid.
 Prefer explicit unambiguous measurements over inconsistent or ambiguous number
 formatting elsewhere in the same source. Do not repair a suspected source typo or
 infer its intended value. If the only relevant evidence is ambiguous, abstain.
