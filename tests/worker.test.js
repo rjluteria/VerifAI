@@ -43,6 +43,7 @@ async function setup({
   tab = { id: 1, url: "https://chatgpt.com/c/test" },
   fetcher,
   eligibility = true,
+  benchmarkTiming = false,
 } = {}) {
   const calls = [];
   const deliveries = [];
@@ -86,6 +87,8 @@ async function setup({
   const context = vm.createContext({
     ...core,
     SERVICE_ORIGIN,
+    BENCHMARK_TIMING: benchmarkTiming,
+    performance,
     chrome,
     crypto: webcrypto,
     URL,
@@ -565,6 +568,48 @@ test("foreground polling is throttled and delivers honest stage updates", async 
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.calls.filter((v) => v === "fetch").length, 1);
 });
+test("completion waits require a declared session capability; old services keep immediate polling", async () => {
+  for (const completionWait of [undefined, false, true]) {
+    const requests = [];
+    const f = await setup({
+      session: {
+        on: true,
+        auth: {
+          origin: SERVICE_ORIGIN,
+          token: "token",
+          expires: Date.now() + 60000,
+          completionWait,
+        },
+        "response:1:message": {
+          id: "message",
+          revision: "a".repeat(64),
+          tab: 1,
+          url: "https://chatgpt.com/c/test",
+          runId: "run",
+          job: "job",
+          stage: "Analyzing claims",
+        },
+      },
+      fetcher: async (url) => {
+        requests.push(url);
+        return {
+          ok: true,
+          json: async () => ({ stage: "Searching independent sources" }),
+        };
+      },
+    });
+    await f.poll();
+    assert.deepEqual(requests, [
+      SERVICE_ORIGIN +
+        "/v1/jobs/job" +
+        (completionWait === true ? "?wait=5" : ""),
+    ]);
+    assert.equal(
+      f.chrome.storage.session.data["response:1:message"].job,
+      "job",
+    );
+  }
+});
 test("late result from superseded job cannot overwrite its replacement", async () => {
   let finish;
   const pending = new Promise((resolve) => {
@@ -721,4 +766,50 @@ test("legacy endpoint and auth cannot redirect configured verification", async (
     ).error,
     "Backend overrides are not supported.",
   );
+});
+
+test("developer timing distinguishes fresh verification, restoration and Re-verify", async () => {
+  const value = {
+    id: "message",
+    revision: "a".repeat(64),
+    tab: 1,
+    url: "https://chatgpt.com/c/test",
+    text: "A fact.",
+    citations: [],
+  };
+  const f = await setup({
+    benchmarkTiming: true,
+    session: { on: true },
+    fetcher: async (url) => ({
+      ok: true,
+      json: async () =>
+        url.endsWith("/v1/session")
+          ? { token: "token", expires_in: 900 }
+          : { job: "job" },
+    }),
+  });
+  await f.send({ type: "verify", ...value });
+  await new Promise((resolve) => setImmediate(resolve));
+  const key = "response:1:message";
+  let stored = f.chrome.storage.session.data[key];
+  assert.ok(Number.isFinite(stored.benchmarkStartedAt));
+  assert.equal(stored.benchmarkRestored, false);
+  const firstRun = stored.benchmarkRun;
+  // A restoration retains the already verified revision; it does not verify again.
+  stored.result = { claims: [], unsupported: [], notice: "Fixture." };
+  const requests = f.calls.filter((v) => v === "fetch").length;
+  await f.send({ type: "verify", ...value });
+  assert.equal(f.calls.filter((v) => v === "fetch").length, requests);
+  stored = f.chrome.storage.session.data[key];
+  assert.equal(stored.benchmarkRestored, true);
+  assert.notEqual(stored.benchmarkRun, firstRun);
+  f.chrome.storage.session.data.selected = key;
+  const restoreRun = stored.benchmarkRun;
+  await f.send(
+    { type: "reverify" },
+    { url: "chrome-extension://test/panel.html" },
+  );
+  stored = f.chrome.storage.session.data[key];
+  assert.equal(stored.benchmarkRestored, false);
+  assert.notEqual(stored.benchmarkRun, restoreRun);
 });

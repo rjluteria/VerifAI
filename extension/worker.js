@@ -1,5 +1,5 @@
 import { eligible, savedHistory, validResult, summary } from "./core.js";
-import { SERVICE_ORIGIN } from "./config.js";
+import { SERVICE_ORIGIN, BENCHMARK_TIMING } from "./config.js";
 let queue = Promise.resolve();
 function serialized(action) {
   const task = queue.then(action);
@@ -109,6 +109,7 @@ async function api(path, options = {}, submission) {
     auth = {
       token: data.token,
       expires: Date.now() + data.expires_in * 1000 - 30000,
+      completionWait: data.completion_wait === 5,
       origin,
     };
     await chrome.storage.session.set({ auth });
@@ -260,7 +261,12 @@ async function poll() {
       }
       if (!value.job || value.stage === "Failed") continue;
       try {
-        const job = await api("/v1/jobs/" + encodeURIComponent(value.job));
+        const { auth } = await chrome.storage.session.get("auth");
+        const job = await api(
+          "/v1/jobs/" +
+            encodeURIComponent(value.job) +
+            (auth?.completionWait === true ? "?wait=5" : ""),
+        );
         const current = (await chrome.storage.session.get(key))[key];
         if (current?.job !== value.job) continue;
         if (job.result && !validResult(job.result)) {
@@ -321,7 +327,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (
         current.active &&
         message.poll === true &&
-        Date.now() - lastForegroundPoll >= 5000
+        Date.now() - lastForegroundPoll >= 1000
       ) {
         lastForegroundPoll = Date.now();
         poll().catch(() => {});
@@ -329,6 +335,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return current;
     }
     if (message.type === "verify") {
+      const benchmarkStartedAt = BENCHMARK_TIMING
+        ? performance.timeOrigin + performance.now()
+        : undefined;
       if (
         !(await state(sender)).active ||
         !(await submissionActive(
@@ -358,6 +367,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       if (old?.revision === message.revision) {
         await store(key, {
           ...old,
+          ...(BENCHMARK_TIMING && old.result
+            ? {
+                benchmarkStartedAt,
+                benchmarkRun: crypto.randomUUID(),
+                benchmarkRestored: true,
+              }
+            : {}),
           text: message.text,
           citations: message.citations,
           tab: sender.tab.id,
@@ -372,6 +388,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         id: message.id,
         revision: message.revision,
         runId: crypto.randomUUID(),
+        ...(BENCHMARK_TIMING
+          ? {
+              benchmarkStartedAt,
+              benchmarkRun: crypto.randomUUID(),
+              benchmarkRestored: false,
+            }
+          : {}),
         text: message.text,
         citations: message.citations,
         tab: sender.tab.id,
@@ -433,6 +456,9 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return { ok: true };
     }
     if (message.type === "reverify") {
+      const benchmarkStartedAt = BENCHMARK_TIMING
+        ? performance.timeOrigin + performance.now()
+        : undefined;
       const { selected } = await chrome.storage.session.get("selected");
       const old = (await chrome.storage.session.get(selected || ""))[selected];
       if (!old?.text)
@@ -445,6 +471,13 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const value = {
         ...old,
         runId: crypto.randomUUID(),
+        ...(BENCHMARK_TIMING
+          ? {
+              benchmarkStartedAt,
+              benchmarkRun: crypto.randomUUID(),
+              benchmarkRestored: false,
+            }
+          : {}),
         result: undefined,
         job: undefined,
         attempts: 0,

@@ -29,15 +29,28 @@ def main():
         "--backend-origin", help="Developer-only Render origin override for this ZIP."
     )
     parser.add_argument("--output", type=Path, help="Developer package destination.")
+    parser.add_argument(
+        "--benchmark-timing",
+        action="store_true",
+        help="Developer-only visible panel render clock for native acceptance.",
+    )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
     manifest = json.loads((root / "extension/manifest.json").read_text())
     assert "<all_urls>" not in json.dumps(manifest)
     assert manifest["manifest_version"] == 3
     replacements = {}
+    config = (root / "extension/config.js").read_text()
+    config, count = re.subn(
+        r"export const BENCHMARK_TIMING = (?:true|false);",
+        "export const BENCHMARK_TIMING = "
+        + ("true" if args.benchmark_timing else "false")
+        + ";",
+        config,
+    )
+    assert count == 1
     if args.backend_origin:
         origin = service_origin(args.backend_origin)
-        config = (root / "extension/config.js").read_text()
         config, count = re.subn(
             r'backend\("https://[^"\n]+"\)',
             lambda match: "backend(" + json.dumps(origin) + ")",
@@ -45,8 +58,9 @@ def main():
         )
         assert count == 1
         manifest["optional_host_permissions"] = [origin + "/*"]
-        replacements["config.js"] = config.encode()
         replacements["manifest.json"] = (json.dumps(manifest, indent=2) + "\n").encode()
+    if config.encode() != (root / "extension/config.js").read_bytes():
+        replacements["config.js"] = config.encode()
     output = args.output or root / "dist" / ("verifai-" + manifest["version"] + ".zip")
     output.parent.mkdir(parents=True, exist_ok=True)
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:

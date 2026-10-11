@@ -60,6 +60,8 @@ class Service:
         self.origins = set(filter(None, os.getenv("ALLOWED_ORIGINS", "").split(",")))
         self.lock = threading.RLock()
         self.jobs, self.requests = {}, defaultdict(deque)
+        self.completed = threading.Condition(self.lock)
+        self.waiters = threading.BoundedSemaphore(8)
         self.running = threading.BoundedSemaphore(2)
 
     def token(self, origin, owner=None):
@@ -113,6 +115,34 @@ class Service:
                 if self.jobs[key]["expires"] < now:
                     del self.jobs[key]
 
+    def read_job(self, owner, key, wait=False):
+        # Reserve only a bounded subset of HTTP threads for completion waits.
+        # Ownership is checked before waiting and again before returning data.
+        held = False
+        try:
+            with self.completed:
+                job = self.jobs.get(key)
+                if job is None or job["owner"] != owner:
+                    return None
+                if wait and job["stage"] not in ("Complete", "Failed"):
+                    held = self.waiters.acquire(blocking=False)
+                    if held:
+                        self.completed.wait_for(
+                            lambda: (
+                                key not in self.jobs
+                                or self.jobs[key]["owner"] != owner
+                                or self.jobs[key]["stage"] in ("Complete", "Failed")
+                            ),
+                            timeout=5,
+                        )
+                job = self.jobs.get(key)
+                if job is None or job["owner"] != owner:
+                    return None
+                return {k: v for k, v in job.items() if k not in ("owner", "expires")}
+        finally:
+            if held:
+                self.waiters.release()
+
     def start(self, owner, payload):
         if not self.running.acquire(blocking=False):
             return None
@@ -137,6 +167,7 @@ class Service:
                 with self.lock:
                     if key in self.jobs:
                         self.jobs[key].update(stage="Complete", result=result)
+                        self.completed.notify_all()
             except Exception:
                 with self.lock:
                     if key in self.jobs:
@@ -144,6 +175,7 @@ class Service:
                             stage="Failed",
                             error="Verification unavailable; retry later.",
                         )
+                        self.completed.notify_all()
             finally:
                 self.running.release()
 
@@ -247,7 +279,12 @@ def handler(service):
                 except ValueError:
                     pass
                 return self.reply(
-                    200, {"token": service.token(origin, owner), "expires_in": 900}
+                    200,
+                    {
+                        "token": service.token(origin, owner),
+                        "expires_in": 900,
+                        "completion_wait": 5,
+                    },
                 )
             try:
                 auth = self.headers.get("Authorization", "")
@@ -261,15 +298,14 @@ def handler(service):
                     return self.reply(404, {"error": "route"})
                 return self.reply(200, process_metrics())
             if not post and self.path.startswith("/v1/jobs/"):
-                key = self.path.removeprefix("/v1/jobs/")
-                with service.lock:
-                    job = service.jobs.get(key)
-                    if job is None or job["owner"] != owner:
-                        return self.reply(404, {"error": "job"})
-                    return self.reply(
-                        200,
-                        {k: v for k, v in job.items() if k not in ("owner", "expires")},
-                    )
+                path, separator, query = self.path.partition("?")
+                if separator and query != "wait=5":
+                    return self.reply(400, {"error": "query"})
+                key = path.removeprefix("/v1/jobs/")
+                job = service.read_job(owner, key, wait=bool(separator))
+                if job is None:
+                    return self.reply(404, {"error": "job"})
+                return self.reply(200, job)
             if not post or self.path != "/v1/verify":
                 return self.reply(404, {"error": "route"})
             if not service.limit("verify:" + owner, 5):

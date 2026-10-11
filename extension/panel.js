@@ -1,3 +1,4 @@
+import { BENCHMARK_TIMING } from "./config.js";
 function element(tag, text, parent) {
   const node = document.createElement(tag);
   node.textContent = text;
@@ -23,6 +24,7 @@ function link(url, parent) {
   } catch {}
 }
 let last = "";
+const benchmarkRenders = new Map();
 async function render() {
   const { selected, storageNotice } = await chrome.storage.session.get([
     "selected",
@@ -121,6 +123,50 @@ async function render() {
       link(citation.url, p);
     }
   element("p", result.notice, root).className = "muted";
+  if (
+    BENCHMARK_TIMING &&
+    Number.isFinite(data.benchmarkStartedAt) &&
+    data.benchmarkRun
+  ) {
+    const checkpoint = last;
+    // Two frames allow the complete verdict/evidence DOM to be painted first.
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (last !== checkpoint || document.visibilityState !== "visible")
+          return;
+        if (!benchmarkRenders.has(data.benchmarkRun)) {
+          benchmarkRenders.set(
+            data.benchmarkRun,
+            Math.max(
+              0,
+              performance.timeOrigin +
+                performance.now() -
+                data.benchmarkStartedAt,
+            ),
+          );
+          if (benchmarkRenders.size > 200)
+            benchmarkRenders.delete(benchmarkRenders.keys().next().value);
+        }
+        const incomplete =
+          result.unsupported.length ||
+          result.claims.some((claim) =>
+            claim.errors.some((error) =>
+              /time budget|source-review budget/i.test(error),
+            ),
+          );
+        const kind = data.benchmarkRestored
+          ? "cached result restored"
+          : incomplete
+            ? "incomplete result rendered"
+            : "final result rendered";
+        element(
+          "p",
+          `Benchmark: ${kind} after ${benchmarkRenders.get(data.benchmarkRun).toFixed(3)} ms.`,
+          root,
+        ).id = "benchmark-timing";
+      }),
+    );
+  }
 }
 document.querySelector("#reverify").addEventListener("click", async () => {
   const result = await chrome.runtime.sendMessage({ type: "reverify" });

@@ -72,6 +72,8 @@ docker build -t verifai .
 
 Python can be invoked as `py -3` on Windows. The package script writes an installable extension ZIP under `dist/`. The packaged endpoint is configured in `extension/config.js`; old saved endpoint overrides are removed and cannot redirect requests. Developers can build a separate test ZIP with `python scripts/package.py --backend-origin https://your-test-service.onrender.com --output dist/test.zip`. This changes only that package and its exact optional host permission, not user preferences or tracked configuration. Configure the test service to allow that extension origin before using it. CI defines Linux, macOS and Windows checks and a container build. Publishing or merely defining that workflow does not establish that remote checks ran.
 
+A developer test ZIP can enable visible-render measurements with `python scripts/package.py --benchmark-timing --output dist/timing-test.zip`. Normal packages always disable this instrument. The worker records the start of its verification handler before session acquisition and submission; the visible side panel records completion after rendering all result cards and two animation frames. Keep the panel visible before completion. Cached restoration and incomplete results are labelled separately; this instrument does not establish source freshness or a five-second performance guarantee.
+
 Optional model evaluation (requires a locally configured `NVIDIA_API_KEY`). Keep result files outside the repository; they contain full model reasons and are local evaluation artifacts:
 
 ```text

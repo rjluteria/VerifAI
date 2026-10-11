@@ -1131,10 +1131,14 @@ class EngineTests(unittest.TestCase):
                 ).encode()
             ),
         ]
+        by_query = dict(zip(("claim", "claim official source"), responses))
         with (
             patch.dict("os.environ", {"ALLOW_KEYLESS_SEARCH": "1"}),
             patch(
-                "verifai.sources.urllib.request.urlopen", side_effect=responses
+                "verifai.sources.urllib.request.urlopen",
+                side_effect=lambda request, **kwargs: by_query[
+                    json.loads(request.data)["query"]
+                ],
             ) as calls,
         ):
             self.assertEqual(
@@ -1142,7 +1146,7 @@ class EngineTests(unittest.TestCase):
                 ["https://example.org/a", "https://official.example/b"],
             )
         queries = [json.loads(call.args[0].data) for call in calls.call_args_list]
-        self.assertEqual(
+        self.assertCountEqual(
             [q["query"] for q in queries], ["claim", "claim official source"]
         )
         self.assertTrue(
@@ -1150,6 +1154,44 @@ class EngineTests(unittest.TestCase):
                 not q["include_answer"] and not q["include_raw_content"]
                 for q in queries
             )
+        )
+
+    def test_discovery_parallel_queries_keep_order_and_global_capacity(self):
+        from concurrent.futures import ThreadPoolExecutor
+
+        barrier = threading.Barrier(2)
+        active = 0
+        maximum = 0
+        lock = threading.Lock()
+
+        def opened(request, timeout):
+            nonlocal active, maximum
+            self.assertEqual(timeout, 20)
+            query = json.loads(request.data)["query"]
+            with lock:
+                active += 1
+                maximum = max(maximum, active)
+            try:
+                barrier.wait(timeout=2)
+                url = (
+                    "https://official.example/"
+                    if query.endswith(" official source")
+                    else "https://first.example/"
+                )
+                return io.BytesIO(json.dumps({"results": [{"url": url}]}).encode())
+            finally:
+                with lock:
+                    active -= 1
+
+        with (
+            patch.dict("os.environ", {"ALLOW_KEYLESS_SEARCH": "1"}),
+            patch("verifai.sources.urllib.request.urlopen", side_effect=opened),
+            ThreadPoolExecutor(max_workers=2) as jobs,
+        ):
+            results = list(jobs.map(discovery, ["claim one", "claim two"]))
+        self.assertEqual(maximum, 2)
+        self.assertEqual(
+            results, [["https://first.example/", "https://official.example/"]] * 2
         )
 
     def test_hidden_html(self):
@@ -1290,6 +1332,7 @@ class HTTPTests(unittest.TestCase):
     def test_session_job_flow_and_ownership(self):
         code, session = self.request("/v1/session", {})
         self.assertEqual(code, 200)
+        self.assertEqual(session["completion_wait"], 5)
         code, job = self.request(
             "/v1/verify", {"text": "A is B.", "citations": []}, session["token"]
         )
@@ -1304,6 +1347,74 @@ class HTTPTests(unittest.TestCase):
         self.assertEqual(result["result"]["claims"][0]["label"], "UNVERIFIED")
         other = self.service.token("chrome-extension://test")
         self.assertEqual(self.request("/v1/jobs/" + job["job"], token=other)[0], 404)
+
+    def test_completion_wait_wakes_and_preserves_ownership(self):
+        entered = threading.Event()
+        release = threading.Event()
+
+        class DelayedEngine:
+            def verify(self, text, citations, progress):
+                entered.set()
+                release.wait(timeout=2)
+                return {"claims": []}
+
+        self.service.engine = DelayedEngine()
+        token = self.service.token("chrome-extension://test")
+        owner = self.service.identity(token, "chrome-extension://test")
+        key = self.service.start(owner, {"text": "A is B.", "citations": []})
+        self.assertTrue(entered.wait(timeout=1))
+        other = self.service.token("chrome-extension://test")
+        self.assertEqual(
+            self.request("/v1/jobs/" + key + "?wait=5", token=other)[0], 404
+        )
+        result = []
+        waiting = threading.Thread(
+            target=lambda: result.append(
+                self.request("/v1/jobs/" + key + "?wait=5", token=token)
+            )
+        )
+        waiting.start()
+        release.set()
+        waiting.join(timeout=2)
+        self.assertFalse(waiting.is_alive())
+        self.assertEqual(
+            result[0], (200, {"stage": "Complete", "result": {"claims": []}})
+        )
+        self.assertEqual(
+            self.request("/v1/jobs/" + key + "?wait=999", token=token)[0], 400
+        )
+        self.assertEqual(
+            self.request("/v1/jobs/" + key + "?wait=5&wait=5", token=token)[0], 400
+        )
+
+    def test_completion_wait_is_bounded_and_rechecks_owner(self):
+        self.service.jobs["pending"] = {
+            "owner": "owner",
+            "stage": "Analyzing claims",
+            "expires": time.time() + 60,
+        }
+
+        def changed(predicate, timeout):
+            self.assertEqual(timeout, 5)
+            self.assertFalse(predicate())
+            self.service.jobs["pending"]["owner"] = "different"
+            self.assertTrue(predicate())
+
+        with patch.object(self.service.completed, "wait_for", side_effect=changed):
+            self.assertIsNone(self.service.read_job("owner", "pending", wait=True))
+        self.service.jobs["pending"]["owner"] = "owner"
+        for _ in range(8):
+            self.assertTrue(self.service.waiters.acquire(blocking=False))
+        try:
+            with patch.object(self.service.completed, "wait_for") as wait:
+                result = self.service.read_job("owner", "pending", wait=True)
+                wait.assert_not_called()
+            self.assertEqual(result, {"stage": "Analyzing claims"})
+        finally:
+            for _ in range(8):
+                self.service.waiters.release()
+        self.assertTrue(self.service.waiters.acquire(blocking=False))
+        self.service.waiters.release()
 
     def test_origin_and_auth(self):
         self.assertEqual(

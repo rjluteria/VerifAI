@@ -1,14 +1,19 @@
 import hashlib
 import json
 import os
+import threading
 import time
 import urllib.error
 import urllib.request
 import urllib.robotparser
+from concurrent.futures import ThreadPoolExecutor
+from contextvars import copy_context
 from html.parser import HTMLParser
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from .network import FetchRejected, fetch
+
+_SEARCH_SLOTS = threading.BoundedSemaphore(2)
 
 
 class Text(HTMLParser):
@@ -120,8 +125,9 @@ def discovery(query):
         headers["X-Tavily-Access-Mode"] = "keyless"
     else:
         raise RuntimeError("discovery-unconfigured")
-    urls = []
-    for search_query in (query, query + " official source"):
+
+    def search(search_query):
+        urls = []
         payload = json.loads(body)
         payload["query"] = search_query
         req = urllib.request.Request(
@@ -130,8 +136,13 @@ def discovery(query):
             headers=headers,
         )
         try:
-            with urllib.request.urlopen(req, timeout=20) as response:
-                raw = response.read(500001)
+            if not _SEARCH_SLOTS.acquire(timeout=20):
+                return []
+            try:
+                with urllib.request.urlopen(req, timeout=20) as response:
+                    raw = response.read(500001)
+            finally:
+                _SEARCH_SLOTS.release()
             if len(raw) > 500000:
                 raise ValueError("discovery-size")
             results = json.loads(raw).get("results", [])
@@ -146,7 +157,17 @@ def discovery(query):
                 ):
                     urls.append(row["url"])
         except (OSError, ValueError, TypeError, AttributeError):
-            continue
+            pass
+        return urls
+
+    # Preserve query/result order even when the official-source request finishes
+    # first. Search snippets remain discovery hints, never admitted as evidence.
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [
+            pool.submit(copy_context().run, search, search_query)
+            for search_query in (query, query + " official source")
+        ]
+        urls = list(dict.fromkeys(url for future in futures for url in future.result()))
     return urls or encyclopedia(query)
 
 
