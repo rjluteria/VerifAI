@@ -330,7 +330,16 @@ formatting elsewhere in the same source. Do not repair a suspected source typo o
 infer its intended value. If the only relevant evidence is ambiguous, abstain.
 Read surrounding qualifiers when interpreting an ID, but include contextual IDs
 only when they are needed to resolve a material qualifier or reference. Conclusive labels
-need at least one ID. For missing evidence IDs may be empty. Never use outside facts."""
+need at least one ID. For missing evidence IDs may be empty. Never use outside facts.
+Evidence-grounded arithmetic is allowed: when the evidence supplies an applicable
+conversion rate for the same entity, property and reporting period, calculate the
+converted amount and compare it with the claim. The evidence need not separately
+print the calculated result. Quote the source amount AND the applicable rate that
+ground the calculation. Preserve currency direction, units and quantity scales.
+An absent literal converted figure is not missing evidence when both required
+operands and their applicable conversion are explicitly supplied. An absent rate,
+different period, uncertain operands or ambiguous applicability still requires
+UNVERIFIED; never invent a conversion from currency names or outside knowledge."""
         )
         if reconsider:
             instruction += """ A prior review pair was incomplete or disagreed.
