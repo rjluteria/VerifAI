@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "VerifAI",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "minimum_chrome_version": "120",
   "description": "Checks factual claims against cited and independently retrieved evidence.",
   "permissions": ["storage", "sidePanel", "alarms"],

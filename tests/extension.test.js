@@ -65,3 +65,20 @@ test("manifest permissions and private source boundary", () => {
     "https://verifai-ekan.onrender.com/*",
   ]);
 });
+
+test("incomplete review summaries stay distinct from completed factual uncertainty", () => {
+  const result = {
+    claims: [
+      {
+        label: "UNVERIFIED",
+        errors: ["Evidence review could not be completed."],
+      },
+    ],
+    unsupported: [],
+  };
+  assert.match(summary(result), /^Analysis incomplete · /);
+  result.claims[0].errors = [];
+  assert.doesNotMatch(summary(result), /incomplete/);
+  result.unsupported.push("Unsupported image claim.");
+  assert.match(summary(result), /^Analysis incomplete · /);
+});

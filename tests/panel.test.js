@@ -207,6 +207,14 @@ test("benchmark cannot call provider-incomplete evidence a complete final render
     f.dom.window.document.querySelector("#benchmark-timing").textContent,
     /incomplete result rendered/,
   );
+  assert.match(
+    f.dom.window.document.querySelector("article .status").textContent,
+    /^Analysis incomplete: SUPPORTED$/,
+  );
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Analysis incomplete; some checks could not finish.",
+  );
 });
 
 test("submission counter is visible only in the developer build", async () => {

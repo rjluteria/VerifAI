@@ -36,8 +36,13 @@ async function render() {
   const fingerprint = JSON.stringify([selected, data, storageNotice]);
   if (fingerprint === last) return;
   last = fingerprint;
-  document.querySelector("#stage").textContent =
-    data?.stage || "Select View details beside a response.";
+  const analysisIncomplete =
+    data?.result &&
+    (data.result.unsupported.length ||
+      data.result.claims.some((claim) => claim.errors.length));
+  document.querySelector("#stage").textContent = analysisIncomplete
+    ? "Analysis incomplete; some checks could not finish."
+    : data?.stage || "Select View details beside a response.";
   document.querySelector("#reverify").disabled = !data?.text;
   const root = document.querySelector("#results");
   root.replaceChildren();
@@ -63,7 +68,12 @@ async function render() {
   for (const claim of result.claims) {
     const card = element("article", "", root);
     element("h2", claim.text, card);
-    element("p", claim.label.replaceAll("_", " "), card).className = "status";
+    const label = claim.label.replaceAll("_", " ");
+    element(
+      "p",
+      claim.errors.length ? "Analysis incomplete: " + label : label,
+      card,
+    ).className = "status";
     for (const [track, sources] of Object.entries(claim.tracks)) {
       element(
         "h3",

@@ -157,10 +157,14 @@ export function summary(result) {
     "CONTRADICTED",
     "UNVERIFIED",
   ];
-  return labels
+  const incomplete =
+    result.unsupported.length ||
+    result.claims.some((claim) => claim.errors?.length);
+  const counts = labels
     .map(
       (label) =>
         `${label.replaceAll("_", " ").toLowerCase()}: ${result.claims.filter((c) => c.label === label).length}`,
     )
     .join(" · ");
+  return incomplete ? "Analysis incomplete · " + counts : counts;
 }
