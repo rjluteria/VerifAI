@@ -82,7 +82,7 @@ async function setup({ benchmarkTiming = false, clock = Date } = {}) {
       URL,
       chrome,
       Date: clock,
-      performance: { timeOrigin: 0, now: () => clock.now() },
+      performance: { timeOrigin: 99999999, now: () => clock.now() + 50000 },
       BENCHMARK_TIMING: benchmarkTiming,
       requestAnimationFrame: (callback) => frames.push(callback),
     },
@@ -142,6 +142,8 @@ test("developer clock waits for complete visible rendering and preserves its fir
   Object.assign(f.data.first, {
     benchmarkStartedAt: 1000,
     benchmarkRun: "run",
+    benchmarkClock: "wall-clock-v3",
+    benchmarkClockOrigin: "dispatcher",
   });
   await f.listeners[0]();
   assert.ok(f.dom.window.document.querySelector("article"));
@@ -196,6 +198,8 @@ test("benchmark cannot call provider-incomplete evidence a complete final render
   Object.assign(f.data.first, {
     benchmarkStartedAt: Date.now() - 100,
     benchmarkRun: "provider-error",
+    benchmarkClock: "wall-clock-v3",
+    benchmarkClockOrigin: "dispatcher",
   });
   f.data.first.result.claims[0].errors.push(
     "Independent evidence review could not be completed.",
@@ -232,5 +236,45 @@ test("submission counter is visible only in the developer build", async () => {
     developer.dom.window.document.querySelector("#benchmark-submissions")
       .textContent,
     /browser submission attempts 1/,
+  );
+});
+
+for (const delta of [0, -50]) {
+  test(`nonpositive clock ${delta} is invalid instead of a zero latency pass`, async () => {
+    class Clock extends Date {
+      static now() {
+        return 1000;
+      }
+    }
+    const f = await setup({ benchmarkTiming: true, clock: Clock });
+    Object.assign(f.data.first, {
+      benchmarkStartedAt: 1000 - delta,
+      benchmarkRun: "bad-clock",
+      benchmarkClock: "wall-clock-v3",
+      benchmarkClockOrigin: "dispatcher",
+    });
+    await f.listeners[0]();
+    f.frames.shift()();
+    f.frames.shift()();
+    assert.match(
+      f.dom.window.document.querySelector("#benchmark-timing").textContent,
+      /invalid render clock.*No latency pass/,
+    );
+  });
+}
+test("handler fallback cannot establish a dispatcher-to-render latency pass", async () => {
+  const f = await setup({ benchmarkTiming: true });
+  Object.assign(f.data.first, {
+    benchmarkStartedAt: Date.now() - 100,
+    benchmarkRun: "fallback-clock",
+    benchmarkClock: "wall-clock-v3",
+    benchmarkClockOrigin: "handler fallback",
+  });
+  await f.listeners[0]();
+  f.frames.shift()();
+  f.frames.shift()();
+  assert.match(
+    f.dom.window.document.querySelector("#benchmark-timing").textContent,
+    /invalid render clock.*handler fallback.*No latency pass/,
   );
 });

@@ -307,11 +307,8 @@ test("developer clock begins at content dispatch; normal submissions omit timing
     const sent = f.sent[0];
     if (enabled) {
       assert.ok(Number.isFinite(sent.benchmarkStartedAt));
-      assert.ok(sent.benchmarkStartedAt >= f.window.performance.timeOrigin);
-      assert.ok(
-        sent.benchmarkStartedAt <=
-          f.window.performance.timeOrigin + f.window.performance.now(),
-      );
+      assert.equal(sent.benchmarkStartedAt, 2000);
+      assert.equal(sent.benchmarkClock, "wall-clock-v3");
     } else assert.equal(Object.hasOwn(sent, "benchmarkStartedAt"), false);
     f.page.window.close();
   }

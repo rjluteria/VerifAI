@@ -153,12 +153,7 @@ async function render() {
         if (!benchmarkRenders.has(data.benchmarkRun)) {
           benchmarkRenders.set(
             data.benchmarkRun,
-            Math.max(
-              0,
-              performance.timeOrigin +
-                performance.now() -
-                data.benchmarkStartedAt,
-            ),
+            Date.now() - data.benchmarkStartedAt,
           );
           if (benchmarkRenders.size > 200)
             benchmarkRenders.delete(benchmarkRenders.keys().next().value);
@@ -171,9 +166,16 @@ async function render() {
           : incomplete
             ? "incomplete result rendered"
             : "final result rendered";
+        const elapsed = benchmarkRenders.get(data.benchmarkRun);
+        const validClock =
+          data.benchmarkClock === "wall-clock-v3" &&
+          data.benchmarkClockOrigin === "dispatcher" &&
+          elapsed > 0;
         element(
           "p",
-          `Benchmark: ${kind} after ${benchmarkRenders.get(data.benchmarkRun).toFixed(3)} ms.`,
+          validClock
+            ? `Benchmark: ${kind} after ${elapsed.toFixed(3)} ms. Clock: wall-clock-v3; origin: dispatcher.`
+            : `Benchmark: invalid render clock (${elapsed.toFixed(3)} ms; origin: ${data.benchmarkClockOrigin || "unknown"}). No latency pass.`,
           root,
         ).id = "benchmark-timing";
       }),
@@ -184,7 +186,7 @@ document.querySelector("#reverify").addEventListener("click", async () => {
   const result = await chrome.runtime.sendMessage({
     type: "reverify",
     ...(BENCHMARK_TIMING
-      ? { benchmarkStartedAt: performance.timeOrigin + performance.now() }
+      ? { benchmarkStartedAt: Date.now(), benchmarkClock: "wall-clock-v3" }
       : {}),
   });
   if (result.error) document.querySelector("#stage").textContent = result.error;

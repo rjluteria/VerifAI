@@ -830,7 +830,7 @@ test("developer clock includes dispatch before worker wakeup and never enters AP
       };
     },
   });
-  const start = performance.timeOrigin + performance.now() - 1000;
+  const start = Date.now() - 1000;
   await f.send({
     type: "verify",
     id: "message",
@@ -839,11 +839,16 @@ test("developer clock includes dispatch before worker wakeup and never enters AP
     text: "A fact.",
     citations: [],
     benchmarkStartedAt: start,
+    benchmarkClock: "wall-clock-v3",
   });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(
     f.chrome.storage.session.data["response:1:message"].benchmarkStartedAt,
     start,
+  );
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].benchmarkClockOrigin,
+    "dispatcher",
   );
   assert.deepEqual(bodies.at(-1), { text: "A fact.", citations: [] });
 });

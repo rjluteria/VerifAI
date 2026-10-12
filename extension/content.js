@@ -298,7 +298,10 @@
           revision,
           ...body,
           ...(BENCHMARK_TIMING
-            ? { benchmarkStartedAt: performance.timeOrigin + performance.now() }
+            ? {
+                benchmarkStartedAt: Date.now(),
+                benchmarkClock: "wall-clock-v3",
+              }
             : {}),
         });
         if (response.accepted) {
