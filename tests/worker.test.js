@@ -1001,3 +1001,48 @@ test("a superseded session failure cannot publish stale progress for a newer Re-
     ),
   );
 });
+
+test("malformed completed job data publishes a current-run error rather than leaving inline progress pending", async () => {
+  const key = "response:1:message";
+  const f = await setup({
+    session: {
+      on: true,
+      auth: {
+        token: "fixture",
+        expires: Date.now() + 900000,
+        origin: SERVICE_ORIGIN,
+      },
+      [key]: {
+        tab: 1,
+        id: "message",
+        revision: "c".repeat(64),
+        runId: "owned-run",
+        runSequence: 2,
+        job: "owned-job",
+        stage: "Verifying evidence",
+        url: "https://chatgpt.com/c/test",
+        text: "A synthetic fact.",
+        citations: [],
+      },
+    },
+    fetcher: async (url) => {
+      assert.ok(url.includes("/v1/jobs/owned-job"));
+      return {
+        ok: true,
+        json: async () => ({
+          stage: "Complete",
+          result: { claims: "malformed" },
+        }),
+      };
+    },
+  });
+  await f.poll();
+  assert.equal(f.chrome.storage.session.data[key].stage, "Failed");
+  assert.equal(f.chrome.storage.session.data[key].result, undefined);
+  const updates = f.deliveries
+    .map((args) => args[1])
+    .filter((m) => m.type === "result");
+  assert.equal(updates.length, 1);
+  assert.equal(updates[0].runId, "owned-run");
+  assert.match(updates[0].summary, /Invalid verification data; use Re-verify/);
+});

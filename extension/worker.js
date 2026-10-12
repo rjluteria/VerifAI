@@ -314,6 +314,11 @@ async function poll() {
             },
             true,
           );
+          await publish(
+            key,
+            current,
+            "Invalid verification data; use Re-verify.",
+          );
           continue;
         }
         await store(key, { ...current, ...job }, true);
