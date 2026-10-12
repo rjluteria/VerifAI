@@ -343,7 +343,16 @@ test("same-revision results from a superseded verification run cannot overwrite 
     runId: "replacement-run",
     summary: "Service unavailable; automatic recovery will retry.",
   });
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  // WebCrypto completes asynchronously; runner load must not decide this assertion.
+  const deadline = Date.now() + 2000;
+  while (
+    !f.window.document
+      .querySelector("[data-verifai-label]")
+      .textContent.includes("automatic recovery will retry") &&
+    Date.now() < deadline
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
   assert.match(
     f.window.document.querySelector("[data-verifai-label]").textContent,
     /automatic recovery will retry/,
