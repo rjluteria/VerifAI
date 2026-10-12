@@ -201,6 +201,20 @@ async function store(key, value, guarded = false) {
     }
   });
 }
+async function publish(key, value, text) {
+  const current = (await chrome.storage.session.get(key))[key];
+  if (current?.runId !== value.runId) return;
+  try {
+    await chrome.tabs.sendMessage(value.tab, {
+      type: "result",
+      id: value.id,
+      revision: value.revision,
+      runId: value.runId,
+      runSequence: value.runSequence || 0,
+      summary: text,
+    });
+  } catch {}
+}
 async function run(key, value) {
   try {
     if (!(await submissionActive(value))) {
@@ -259,6 +273,7 @@ async function run(key, value) {
       },
       true,
     );
+    await publish(key, value, stage);
     await chrome.alarms.create("poll", {
       delayInMinutes: 1,
       periodInMinutes: 1,
@@ -303,14 +318,11 @@ async function poll() {
         }
         await store(key, { ...current, ...job }, true);
         if (job.result || job.stage) {
-          try {
-            await chrome.tabs.sendMessage(value.tab, {
-              type: "result",
-              id: value.id,
-              revision: value.revision,
-              summary: job.result ? summary(job.result) : job.stage,
-            });
-          } catch {}
+          await publish(
+            key,
+            current,
+            job.result ? summary(job.result) : job.stage,
+          );
         }
       } catch (error) {
         if (error.status === 404)
@@ -327,6 +339,9 @@ async function poll() {
             true,
           );
         else await store(key, { ...value, stage: error.message }, true);
+        const changed = (await chrome.storage.session.get(key))[key];
+        if (changed?.runId === value.runId)
+          await publish(key, changed, changed.stage);
       }
     }
   } finally {
@@ -383,8 +398,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const old =
         (await chrome.storage.session.get(key))[key] || history[message.id];
       if (old?.revision === message.revision) {
+        const runId = old.runId || crypto.randomUUID();
         await store(key, {
           ...old,
+          runId,
+          runSequence: old.runSequence || 0,
           ...(BENCHMARK_TIMING && old.result
             ? {
                 benchmarkStartedAt,
@@ -400,6 +418,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         });
         return {
           accepted: true,
+          runId,
+          runSequence: old.runSequence || 0,
           summary: old.result ? summary(old.result) : old.stage,
         };
       }
@@ -407,6 +427,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         id: message.id,
         revision: message.revision,
         runId: crypto.randomUUID(),
+        runSequence: 0,
         ...(BENCHMARK_TIMING
           ? {
               benchmarkStartedAt,
@@ -423,7 +444,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       };
       await store(key, value);
       run(key, value);
-      return { accepted: true };
+      return {
+        accepted: true,
+        runId: value.runId,
+        runSequence: value.runSequence,
+      };
     }
     if (message.type === "details") {
       if (!(await active(sender))) return { error: "ineligible" };
@@ -489,6 +514,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const value = {
         ...old,
         runId: crypto.randomUUID(),
+        runSequence:
+          (Number.isSafeInteger(old.runSequence) && old.runSequence >= 0
+            ? old.runSequence
+            : 0) + 1,
         ...(BENCHMARK_TIMING
           ? {
               benchmarkStartedAt,
@@ -504,6 +533,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         stage: "Analyzing claims",
       };
       await store(selected, value);
+      try {
+        await chrome.tabs.sendMessage(value.tab, {
+          type: "verification-started",
+          id: value.id,
+          revision: value.revision,
+          runId: value.runId,
+          runSequence: value.runSequence,
+        });
+      } catch {}
       run(selected, value);
       return { ok: true };
     }

@@ -47,7 +47,7 @@ async function fixture(
       sendMessage: async (msg) => {
         if (msg.type === "state") return { active, on: true };
         sent.push(msg);
-        return { accepted: true };
+        return { accepted: true, runId: "fixture-run", runSequence: 0 };
       },
       onMessage: {
         addListener: (fn) => {
@@ -180,6 +180,7 @@ test("late inline results cannot label replaced text before the next scan", asyn
   f.window.document.querySelector("p").textContent = "Replacement fact.";
   f.receive({
     type: "result",
+    runId: "fixture-run",
     id: original.id,
     revision: original.revision,
     summary: "SUPPORTED old response",
@@ -197,6 +198,7 @@ test("late results from a different SPA conversation are not rendered", async ()
   f.window.history.pushState({}, "", "/c/other");
   f.receive({
     type: "result",
+    runId: "fixture-run",
     id: original.id,
     revision: original.revision,
     summary: "SUPPORTED old conversation",
@@ -313,4 +315,80 @@ test("developer clock begins at content dispatch; normal submissions omit timing
     } else assert.equal(Object.hasOwn(sent, "benchmarkStartedAt"), false);
     f.page.window.close();
   }
+});
+
+test("same-revision results from a superseded verification run cannot overwrite progress", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  const message = f.sent[0];
+  f.receive({
+    type: "verification-started",
+    id: message.id,
+    revision: message.revision,
+    runId: "replacement-run",
+    runSequence: 1,
+  });
+  f.receive({
+    type: "result",
+    id: message.id,
+    revision: message.revision,
+    runId: "fixture-run",
+    summary: "Old retry failure",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.doesNotMatch(
+    f.window.document.querySelector("[data-verifai-label]").textContent,
+    /Old retry failure/,
+  );
+  f.receive({
+    type: "result",
+    id: message.id,
+    revision: message.revision,
+    runId: "replacement-run",
+    summary: "Service unavailable; automatic recovery will retry.",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.match(
+    f.window.document.querySelector("[data-verifai-label]").textContent,
+    /automatic recovery will retry/,
+  );
+  f.window.close();
+});
+
+test("out-of-order start notices cannot roll a response back to an earlier Re-verify run", async () => {
+  const f = await fixture("<p>A fact.</p>");
+  const message = f.sent[0];
+  f.receive({
+    type: "verification-started",
+    id: message.id,
+    revision: message.revision,
+    runId: "newest",
+    runSequence: 2,
+  });
+  f.receive({
+    type: "verification-started",
+    id: message.id,
+    revision: message.revision,
+    runId: "older",
+    runSequence: 1,
+  });
+  f.receive({
+    type: "result",
+    id: message.id,
+    revision: message.revision,
+    runId: "older",
+    summary: "Old final verdict",
+  });
+  f.receive({
+    type: "result",
+    id: message.id,
+    revision: message.revision,
+    runId: "newest",
+    summary: "Current verification progress",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  assert.equal(
+    f.window.document.querySelector("[data-verifai-label]").textContent,
+    "Current verification progress",
+  );
+  f.window.close();
 });

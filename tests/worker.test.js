@@ -917,3 +917,87 @@ test("developer submission count survives a worker restart without posting the p
     1,
   );
 });
+
+test("session acquisition failures update the matching inline response with honest retry progress", async () => {
+  const f = await setup({
+    session: { on: true },
+    fetcher: async () => {
+      throw Error("Synthetic session timeout");
+    },
+  });
+  const reply = await f.send({
+    type: "verify",
+    id: "message",
+    revision: "b".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+    url: "https://chatgpt.com/c/test",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const messages = f.deliveries
+    .map((args) => args[1])
+    .filter((message) => message.type === "result");
+  assert.equal(messages.length, 1);
+  assert.equal(messages[0].runId, reply.runId);
+  assert.equal(messages[0].revision, "b".repeat(64));
+  assert.match(
+    messages[0].summary,
+    /Synthetic session timeout.*Automatic recovery will retry/,
+  );
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].job,
+    undefined,
+  );
+});
+
+test("a superseded session failure cannot publish stale progress for a newer Re-verify run", async () => {
+  let sessions = 0,
+    rejectFirst;
+  const f = await setup({
+    session: { on: true },
+    fetcher: async (url) => {
+      if (url.endsWith("/v1/session") && ++sessions === 1)
+        return await new Promise((resolve, reject) => {
+          rejectFirst = reject;
+        });
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "fixture", expires_in: 900 }
+            : url.endsWith("/v1/verify")
+              ? { job: "new-owned-job" }
+              : { stage: "Verifying evidence" },
+      };
+    },
+  });
+  const first = await f.send({
+    type: "verify",
+    id: "message",
+    revision: "c".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+    url: "https://chatgpt.com/c/test",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const key = "response:1:message";
+  f.chrome.storage.session.data.selected = key;
+  await f.send(
+    { type: "reverify" },
+    { url: "chrome-extension://test/panel.html" },
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  rejectFirst(Error("Old session failure"));
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const current = f.chrome.storage.session.data[key];
+  assert.notEqual(current.runId, first.runId);
+  assert.equal(current.runSequence, 1);
+  assert.equal(current.job, "new-owned-job");
+  assert.ok(
+    !f.deliveries.some((args) =>
+      args[1].summary?.includes("Old session failure"),
+    ),
+  );
+});

@@ -161,7 +161,7 @@
     const text = clone.textContent.trim();
     return { text, citations };
   }
-  function inline(root, id, revision, text) {
+  function inline(root, id, revision, text, runId, runSequence = 0) {
     let ui = root.querySelector("[data-verifai]");
     if (!ui) {
       ui = document.createElement("div");
@@ -179,7 +179,7 @@
     ui.querySelector("button").onclick = () =>
       chrome.runtime.sendMessage({ type: "details", id });
     ui.querySelector("[data-verifai-label]").textContent = text;
-    current.set(id, { root, revision });
+    current.set(id, { root, revision, runId, runSequence });
   }
   function responses() {
     const found = [
@@ -303,7 +303,14 @@
         });
         if (response.accepted) {
           before.submitted = true;
-          inline(root, id, revision, response.summary || "Analyzing claims");
+          inline(
+            root,
+            id,
+            revision,
+            response.summary || "Analyzing claims",
+            response.runId,
+            response.runSequence,
+          );
         }
       }
     } catch {
@@ -344,10 +351,29 @@
         .catch(() => respond({ eligible: false }));
       return true;
     }
+    if (message.type === "verification-started") {
+      const item = current.get(message.id);
+      if (
+        item?.revision === message.revision &&
+        item.root.isConnected &&
+        typeof message.runId === "string" &&
+        Number.isSafeInteger(message.runSequence) &&
+        message.runSequence > item.runSequence
+      ) {
+        item.runId = message.runId;
+        item.runSequence = message.runSequence;
+      }
+      return;
+    }
     if (message.type !== "result") return;
     (async () => {
       const item = current.get(message.id);
-      if (item?.revision !== message.revision || !item.root.isConnected) return;
+      if (
+        item?.revision !== message.revision ||
+        item.runId !== message.runId ||
+        !item.root.isConnected
+      )
+        return;
       const pageUrl = location.href;
       const response = responses().find((value) => value.root === item.root);
       if (
@@ -361,11 +387,19 @@
         return;
       if (
         revision !== message.revision ||
+        current.get(message.id)?.runId !== message.runId ||
         location.href !== pageUrl ||
         !item.root.isConnected
       )
         return;
-      inline(item.root, message.id, message.revision, message.summary);
+      inline(
+        item.root,
+        message.id,
+        message.revision,
+        message.summary,
+        message.runId,
+        item.runSequence,
+      );
     })().catch(() => {});
   });
   setInterval(scan, 2000);
