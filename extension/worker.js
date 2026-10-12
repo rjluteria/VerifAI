@@ -130,6 +130,17 @@ async function api(path, options = {}, submission) {
     error.paused = true;
     throw error;
   }
+  if (
+    BENCHMARK_TIMING &&
+    submission &&
+    path === "/v1/verify" &&
+    options.method === "POST"
+  ) {
+    // Count actual client request attempts without adding an async gap after eligibility.
+    // The owning run persists this value on completion or error; no counter enters the API.
+    submission.benchmarkSubmissionAttempts =
+      (submission.benchmarkSubmissionAttempts || 0) + 1;
+  }
   const response = await fetch(origin + path, {
     ...options,
     headers: {
@@ -379,6 +390,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
                 benchmarkStartedAt,
                 benchmarkRun: crypto.randomUUID(),
                 benchmarkRestored: true,
+                benchmarkSubmissionAttempts: 0,
               }
             : {}),
           text: message.text,
@@ -400,6 +412,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
               benchmarkStartedAt,
               benchmarkRun: crypto.randomUUID(),
               benchmarkRestored: false,
+              benchmarkSubmissionAttempts: 0,
             }
           : {}),
         text: message.text,
@@ -481,6 +494,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
               benchmarkStartedAt,
               benchmarkRun: crypto.randomUUID(),
               benchmarkRestored: false,
+              benchmarkSubmissionAttempts: 0,
             }
           : {}),
         result: undefined,

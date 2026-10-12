@@ -208,3 +208,21 @@ test("benchmark cannot call provider-incomplete evidence a complete final render
     /incomplete result rendered/,
   );
 });
+
+test("submission counter is visible only in the developer build", async () => {
+  const normal = await setup();
+  normal.data.first.benchmarkSubmissionAttempts = 3;
+  await normal.listeners[0]();
+  assert.equal(
+    normal.dom.window.document.querySelector("#benchmark-submissions"),
+    null,
+  );
+  const developer = await setup({ benchmarkTiming: true });
+  developer.data.first.benchmarkSubmissionAttempts = 1;
+  await developer.listeners[0]();
+  assert.match(
+    developer.dom.window.document.querySelector("#benchmark-submissions")
+      .textContent,
+    /browser submission attempts 1/,
+  );
+});

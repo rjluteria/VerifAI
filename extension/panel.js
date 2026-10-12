@@ -42,6 +42,12 @@ async function render() {
   const root = document.querySelector("#results");
   root.replaceChildren();
   if (storageNotice) element("p", storageNotice, root);
+  if (BENCHMARK_TIMING && Number.isInteger(data?.benchmarkSubmissionAttempts))
+    element(
+      "p",
+      `Benchmark: browser submission attempts ${data.benchmarkSubmissionAttempts}.`,
+      root,
+    ).id = "benchmark-submissions";
   if (!data?.result) return;
   const result = data.result;
   if (!result.claims.length)

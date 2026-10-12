@@ -847,3 +847,73 @@ test("developer clock includes dispatch before worker wakeup and never enters AP
   );
   assert.deepEqual(bodies.at(-1), { text: "A fact.", citations: [] });
 });
+
+test("developer submission count survives a worker restart without posting the pending job again", async () => {
+  let originalPosts = 0;
+  const first = await setup({
+    benchmarkTiming: true,
+    session: { on: true },
+    fetcher: async (url, options) => {
+      if (url.endsWith("/v1/verify")) {
+        originalPosts++;
+        assert.deepEqual(JSON.parse(options.body), {
+          text: "A synthetic fact.",
+          citations: [],
+        });
+      }
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "fixture", expires_in: 900 }
+            : url.endsWith("/v1/verify")
+              ? { job: "owned-job" }
+              : { stage: "Verifying evidence" },
+      };
+    },
+  });
+  await first.send({
+    type: "verify",
+    id: "message",
+    revision: "a".repeat(64),
+    text: "A synthetic fact.",
+    citations: [],
+    url: "https://chatgpt.com/c/test",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  await new Promise((resolve) => setImmediate(resolve));
+  const key = "response:1:message";
+  assert.equal(
+    first.chrome.storage.session.data[key].benchmarkSubmissionAttempts,
+    1,
+  );
+  let resumedPosts = 0;
+  const second = await setup({
+    benchmarkTiming: true,
+    session: first.chrome.storage.session.data,
+    fetcher: async (url, options) => {
+      if (options.method === "POST") resumedPosts++;
+      assert.ok(url.includes("/v1/jobs/owned-job"));
+      return {
+        ok: true,
+        json: async () => ({
+          stage: "Complete",
+          result: {
+            claims: [],
+            unsupported: [],
+            notice: "Protocol fixture only.",
+          },
+        }),
+      };
+    },
+  });
+  await second.poll();
+  assert.equal(originalPosts, 1);
+  assert.equal(resumedPosts, 0);
+  assert.equal(second.chrome.storage.session.data[key].job, "owned-job");
+  assert.equal(second.chrome.storage.session.data[key].stage, "Complete");
+  assert.equal(
+    second.chrome.storage.session.data[key].benchmarkSubmissionAttempts,
+    1,
+  );
+});
