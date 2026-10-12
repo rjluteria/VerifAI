@@ -650,6 +650,9 @@ class Engine:
                                 "label": "UNVERIFIED",
                                 "reason": "Quotation crossed selected evidence boundaries.",
                                 "quotes": [],
+                                "failures": [
+                                    "Selected quotations could not be validated."
+                                ],
                             }
                             snippets = []
                         reviewed_content[doc["text"]] = (verdict, snippets)

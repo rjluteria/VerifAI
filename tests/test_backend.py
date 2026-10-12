@@ -1503,6 +1503,40 @@ class IncompleteReviewTests(unittest.TestCase):
                     for source in sources:
                         self.assertEqual(source["snippets"], [])
 
+    def test_rejected_quote_mapping_is_incomplete_not_completed_factual_uncertainty(
+        self,
+    ):
+        claim = "The crate weighs 6 kg."
+
+        def document(url):
+            return {
+                "url": url,
+                "accessible": True,
+                "text": claim,
+                "checked_at": 1,
+                "sha256": "c" * 64,
+            }
+
+        class InvalidSpanReviewers(Reviewers):
+            def judge(self, name, claim, evidence):
+                return {
+                    "label": "SUPPORTED",
+                    "reason": "review",
+                    "quotes": [evidence],
+                    "quote_spans": [
+                        {"text": evidence, "start": 99, "end": 99 + len(evidence)}
+                    ],
+                }
+
+        result = Engine(InvalidSpanReviewers(), document, lambda text: []).verify(
+            claim, ["https://citation.example/"]
+        )
+        item = result["claims"][0]
+        self.assertEqual(item["label"], "UNVERIFIED")
+        self.assertEqual(item["errors"], ["Evidence review could not be completed."])
+        self.assertEqual(item["tracks"]["citation"][0]["snippets"], [])
+        self.assertIn("Quotation crossed", item["tracks"]["citation"][0]["reason"])
+
     def test_evidence_uncertainty_without_runtime_failure_stays_completed(self):
         claim = "The crate weighs 6 kg."
 
