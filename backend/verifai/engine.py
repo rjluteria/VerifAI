@@ -665,6 +665,10 @@ class Engine:
                         "publisher": urlsplit(doc["url"]).hostname,
                         "scope": "Text evidence; complex tables, images and arbitrary code execution are unsupported.",
                     }
+                    if verdict.get("failures"):
+                        marker = "Evidence review could not be completed."
+                        if marker not in errors:
+                            errors.append(marker)
                     original = content_origins.setdefault(doc["text"], url)
                     if original != url:
                         result["duplicate_of"] = original

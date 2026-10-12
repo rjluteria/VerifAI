@@ -1464,5 +1464,64 @@ class HTTPTests(unittest.TestCase):
         )
 
 
+class IncompleteReviewTests(unittest.TestCase):
+    def test_provider_failures_are_incomplete_and_do_not_expose_raw_exception(self):
+        claim = "The crate weighs 6 kg."
+
+        def document(url):
+            return {
+                "url": url,
+                "accessible": True,
+                "text": claim,
+                "checked_at": 1,
+                "sha256": "a" * 64,
+            }
+
+        for failure in [
+            "model-http-429",
+            "model-http-503",
+            "model-timeout",
+            "sensitive-provider-diagnostic",
+        ]:
+            with self.subTest(failure=failure):
+                models = Reviewers()
+
+                def failed(*args):
+                    raise ModelError(failure)
+
+                models.judge = failed
+                result = Engine(
+                    models, document, lambda text: ["https://independent.example/"]
+                ).verify(claim, ["https://citation.example/"])
+                item = result["claims"][0]
+                self.assertEqual(item["label"], "UNVERIFIED")
+                self.assertEqual(
+                    item["errors"], ["Evidence review could not be completed."]
+                )
+                self.assertNotIn(failure, json.dumps(result))
+                for sources in item["tracks"].values():
+                    for source in sources:
+                        self.assertEqual(source["snippets"], [])
+
+    def test_evidence_uncertainty_without_runtime_failure_stays_completed(self):
+        claim = "The crate weighs 6 kg."
+
+        def document(url):
+            return {
+                "url": url,
+                "accessible": True,
+                "text": "The crate mass is unknown.",
+                "checked_at": 1,
+                "sha256": "b" * 64,
+            }
+
+        models = Reviewers(["UNVERIFIED", "UNVERIFIED"])
+        result = Engine(models, document, lambda text: []).verify(
+            claim, ["https://citation.example/"]
+        )
+        self.assertEqual(result["claims"][0]["label"], "UNVERIFIED")
+        self.assertEqual(result["claims"][0]["errors"], [])
+
+
 if __name__ == "__main__":
     unittest.main()
