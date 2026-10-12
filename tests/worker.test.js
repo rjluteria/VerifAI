@@ -813,3 +813,37 @@ test("developer timing distinguishes fresh verification, restoration and Re-veri
   assert.equal(stored.benchmarkRestored, false);
   assert.notEqual(stored.benchmarkRun, restoreRun);
 });
+
+test("developer clock includes dispatch before worker wakeup and never enters API payload", async () => {
+  const bodies = [];
+  const f = await setup({
+    benchmarkTiming: true,
+    session: { on: true },
+    fetcher: async (url, options) => {
+      if (options.body) bodies.push(JSON.parse(options.body));
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "token", expires_in: 900 }
+            : { job: "job" },
+      };
+    },
+  });
+  const start = performance.timeOrigin + performance.now() - 1000;
+  await f.send({
+    type: "verify",
+    id: "message",
+    revision: "a".repeat(64),
+    url: "https://chatgpt.com/c/test",
+    text: "A fact.",
+    citations: [],
+    benchmarkStartedAt: start,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    f.chrome.storage.session.data["response:1:message"].benchmarkStartedAt,
+    start,
+  );
+  assert.deepEqual(bodies.at(-1), { text: "A fact.", citations: [] });
+});

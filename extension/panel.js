@@ -149,11 +149,7 @@ async function render() {
         }
         const incomplete =
           result.unsupported.length ||
-          result.claims.some((claim) =>
-            claim.errors.some((error) =>
-              /time budget|source-review budget/i.test(error),
-            ),
-          );
+          result.claims.some((claim) => claim.errors.length);
         const kind = data.benchmarkRestored
           ? "cached result restored"
           : incomplete
@@ -169,7 +165,12 @@ async function render() {
   }
 }
 document.querySelector("#reverify").addEventListener("click", async () => {
-  const result = await chrome.runtime.sendMessage({ type: "reverify" });
+  const result = await chrome.runtime.sendMessage({
+    type: "reverify",
+    ...(BENCHMARK_TIMING
+      ? { benchmarkStartedAt: performance.timeOrigin + performance.now() }
+      : {}),
+  });
   if (result.error) document.querySelector("#stage").textContent = result.error;
 });
 chrome.storage.onChanged.addListener(render);

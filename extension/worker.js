@@ -1,5 +1,14 @@
 import { eligible, savedHistory, validResult, summary } from "./core.js";
 import { SERVICE_ORIGIN, BENCHMARK_TIMING } from "./config.js";
+function benchmarkStart(message) {
+  if (!BENCHMARK_TIMING) return undefined;
+  const now = performance.timeOrigin + performance.now();
+  return Number.isFinite(message.benchmarkStartedAt) &&
+    message.benchmarkStartedAt > 0 &&
+    message.benchmarkStartedAt <= now
+    ? message.benchmarkStartedAt
+    : now;
+}
 let queue = Promise.resolve();
 function serialized(action) {
   const task = queue.then(action);
@@ -335,9 +344,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return current;
     }
     if (message.type === "verify") {
-      const benchmarkStartedAt = BENCHMARK_TIMING
-        ? performance.timeOrigin + performance.now()
-        : undefined;
+      const benchmarkStartedAt = benchmarkStart(message);
       if (
         !(await state(sender)).active ||
         !(await submissionActive(
@@ -456,9 +463,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return { ok: true };
     }
     if (message.type === "reverify") {
-      const benchmarkStartedAt = BENCHMARK_TIMING
-        ? performance.timeOrigin + performance.now()
-        : undefined;
+      const benchmarkStartedAt = benchmarkStart(message);
       const { selected } = await chrome.storage.session.get("selected");
       const old = (await chrome.storage.session.get(selected || ""))[selected];
       if (!old?.text)

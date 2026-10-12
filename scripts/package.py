@@ -49,6 +49,17 @@ def main():
         config,
     )
     assert count == 1
+    content = (root / "extension/content.js").read_text()
+    content, count = re.subn(
+        r"const BENCHMARK_TIMING = (?:true|false);",
+        "const BENCHMARK_TIMING = "
+        + ("true" if args.benchmark_timing else "false")
+        + ";",
+        content,
+    )
+    assert count == 1
+    if content.encode() != (root / "extension/content.js").read_bytes():
+        replacements["content.js"] = content.encode()
     if args.backend_origin:
         origin = service_origin(args.backend_origin)
         config, count = re.subn(

@@ -65,6 +65,12 @@ class PackageTests(unittest.TestCase):
                         ],
                         ["https://verifai-ekan.onrender.com/*"],
                     )
+                    self.assertIn(
+                        b"const BENCHMARK_TIMING = "
+                        + (b"true" if enabled else b"false")
+                        + b";",
+                        archive.read("content.js"),
+                    )
                     self.assertNotIn(
                         b"benchmark", archive.read("settings.html").lower()
                     )

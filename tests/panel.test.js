@@ -190,3 +190,21 @@ test("pending replacement invalidates a scheduled benchmark completion", async (
   assert.equal(f.dom.window.document.querySelector("#benchmark-timing"), null);
   assert.equal(f.dom.window.document.querySelector("article"), null);
 });
+
+test("benchmark cannot call provider-incomplete evidence a complete final render", async () => {
+  const f = await setup({ benchmarkTiming: true });
+  Object.assign(f.data.first, {
+    benchmarkStartedAt: Date.now() - 100,
+    benchmarkRun: "provider-error",
+  });
+  f.data.first.result.claims[0].errors.push(
+    "Independent evidence review could not be completed.",
+  );
+  await f.listeners[0]();
+  f.frames.shift()();
+  f.frames.shift()();
+  assert.match(
+    f.dom.window.document.querySelector("#benchmark-timing").textContent,
+    /incomplete result rendered/,
+  );
+});

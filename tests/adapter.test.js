@@ -17,6 +17,7 @@ async function fixture(
     copyDisabled = false,
     modern = false,
     role = "assistant",
+    benchmarkTiming = false,
   } = {},
 ) {
   const page = new JSDOM(
@@ -55,7 +56,12 @@ async function fixture(
       },
     },
   };
-  window.eval(script);
+  window.eval(
+    script.replace(
+      "const BENCHMARK_TIMING = false;",
+      "const BENCHMARK_TIMING = " + benchmarkTiming + ";",
+    ),
+  );
   await scan();
   clock = 2000;
   await scan();
@@ -291,4 +297,20 @@ test("View details follows current conversation identity when a response node is
   assert.equal(f.sent.at(-1).type, "details");
   assert.equal(f.sent.at(-1).id, "/c/reused-node:message-1");
   f.window.close();
+});
+
+test("developer clock begins at content dispatch; normal submissions omit timing", async () => {
+  for (const enabled of [false, true]) {
+    const f = await fixture("<p>A fact.</p>", { benchmarkTiming: enabled });
+    const sent = f.sent[0];
+    if (enabled) {
+      assert.ok(Number.isFinite(sent.benchmarkStartedAt));
+      assert.ok(sent.benchmarkStartedAt >= f.window.performance.timeOrigin);
+      assert.ok(
+        sent.benchmarkStartedAt <=
+          f.window.performance.timeOrigin + f.window.performance.now(),
+      );
+    } else assert.equal(Object.hasOwn(sent, "benchmarkStartedAt"), false);
+    f.page.window.close();
+  }
 });

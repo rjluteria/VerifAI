@@ -1,4 +1,5 @@
 (() => {
+  const BENCHMARK_TIMING = false;
   if (
     !["chatgpt.com", "chat.openai.com"].includes(location.hostname) ||
     location.protocol !== "https:"
@@ -296,6 +297,9 @@
           id,
           revision,
           ...body,
+          ...(BENCHMARK_TIMING
+            ? { benchmarkStartedAt: performance.timeOrigin + performance.now() }
+            : {}),
         });
         if (response.accepted) {
           before.submitted = true;
