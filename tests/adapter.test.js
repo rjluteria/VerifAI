@@ -398,3 +398,86 @@ test("out-of-order start notices cannot roll a response back to an earlier Re-ve
   );
   f.window.close();
 });
+
+test("unavailable response placeholders never submit or offer factual details", async () => {
+  for (const modern of [false, true]) {
+    for (const text of [
+      "This response couldn’t load",
+      "This response couldn't load.",
+    ]) {
+      const f = await fixture(`<p>${text}</p>`, { modern });
+      assert.equal(f.sent.length, 0);
+      assert.match(
+        f.window.document.querySelector("[data-verifai]").textContent,
+        /Not Verifiable: response unavailable/,
+      );
+      assert.equal(
+        f.window.document.querySelector("[data-verifai] button"),
+        null,
+      );
+      f.window.close();
+    }
+  }
+});
+
+test("a load error replacing a pending response rejects eligibility and stale results", async () => {
+  const f = await fixture("<p>A real factual claim.</p>");
+  const original = f.sent[0];
+  f.window.document.querySelector("p").textContent =
+    "This response couldn’t load";
+  const eligibility = await new Promise((resolve) =>
+    f.receive(
+      { type: "eligible", id: original.id, revision: original.revision },
+      {},
+      resolve,
+    ),
+  );
+  assert.equal(eligibility.eligible, false);
+  await f.scan();
+  f.receive({
+    type: "result",
+    id: original.id,
+    revision: original.revision,
+    runId: "fixture-run",
+    summary: "SUPPORTED stale claim",
+  });
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  assert.doesNotMatch(
+    f.window.document.querySelector("[data-verifai]").textContent,
+    /SUPPORTED/,
+  );
+  assert.equal(f.sent.length, 1);
+  f.window.document.querySelector("p").textContent =
+    "A restored factual claim.";
+  await f.scan();
+  f.setClock(4000);
+  await f.scan();
+  assert.equal(f.sent.length, 2);
+  assert.equal(f.sent[1].text, "A restored factual claim.");
+  f.window.close();
+});
+
+test("standalone citation captions do not become claims but destinations and factual anchor text remain", async () => {
+  const f = await fixture(
+    '<p>First fact. Second fact.</p><p><a href="https://example.org/one">Source 1</a></p><p><a href="https://example.org/two">Reference 2</a></p><p><a href="https://example.org/three">Mercury rotates in about 59 days.</a></p>',
+  );
+  assert.equal(f.sent.length, 1);
+  assert.doesNotMatch(f.sent[0].text, /Source 1|Reference 2/);
+  assert.match(f.sent[0].text, /First fact\. Second fact\./);
+  assert.match(f.sent[0].text, /Mercury rotates in about 59 days/);
+  assert.deepEqual(Array.from(f.sent[0].citations), [
+    "https://example.org/one",
+    "https://example.org/two",
+    "https://example.org/three",
+  ]);
+  f.window.close();
+});
+
+test("the load-error phrase inside a factual response is not a blanket filter", async () => {
+  const f = await fixture(
+    "<p>The interface displayed “This response couldn’t load” yesterday. Mercury rotates in about 59 days.</p>",
+  );
+  assert.equal(f.sent.length, 1);
+  assert.match(f.sent[0].text, /Mercury rotates/);
+  f.window.close();
+});

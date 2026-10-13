@@ -55,6 +55,17 @@
           }),
       ),
     ].slice(0, 12);
+    // A standalone citation caption is metadata; its destination stays in citations.
+    clone.querySelectorAll("a[href]").forEach((anchor) => {
+      const caption = anchor.textContent.trim();
+      const paragraph = anchor.closest("p,li");
+      if (
+        citations.includes(anchor.href) &&
+        /^(?:source|citation|reference)\s*\d+$/i.test(caption) &&
+        paragraph?.textContent.trim() === caption
+      )
+        anchor.remove();
+    });
     clone.querySelectorAll("table").forEach((table) => {
       if (table.tHead?.rows.length > 1) {
         try {
@@ -160,6 +171,26 @@
       });
     const text = clone.textContent.trim();
     return { text, citations };
+  }
+  function unavailableResponse(body) {
+    return (
+      body.citations.length === 0 &&
+      /^this response couldn['’]t load[.!]?$/i.test(body.text.trim())
+    );
+  }
+  function showUnavailable(root) {
+    let ui = root.querySelector("[data-verifai]");
+    if (ui?.dataset.verifai !== "unavailable") {
+      ui?.remove();
+      ui = document.createElement("div");
+      ui.dataset.verifai = "unavailable";
+      ui.textContent = "Not Verifiable: response unavailable.";
+      root.append(ui);
+    }
+    snapshots.delete(root);
+    for (const [id, value] of current) {
+      if (value.root === root) current.delete(id);
+    }
   }
   function inline(root, id, revision, text, runId, runSequence = 0) {
     let ui = root.querySelector("[data-verifai]");
@@ -273,6 +304,10 @@
         if (hiddenInPage(root) || hiddenInPage(content)) continue;
         const pageUrl = location.href;
         const body = extract(content);
+        if (unavailableResponse(body)) {
+          showUnavailable(root);
+          continue;
+        }
         if (!body.text || body.text.length > 60000) continue;
         const revision = await fingerprint(body);
         if (location.href !== pageUrl || !root.isConnected) continue;
@@ -336,6 +371,7 @@
     if (!response || hidden(response.root) || hidden(response.body))
       return false;
     const body = extract(response.body);
+    if (unavailableResponse(body)) return false;
     const actual = await fingerprint(body);
     return (
       actual === revision &&
