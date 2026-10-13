@@ -63,6 +63,17 @@ async function render() {
   }
   if (!data?.result) return;
   const result = data.result;
+  if (BENCHMARK_TIMING) {
+    const inspection = element("details", "", root);
+    element("summary", "Inspectable verification evidence", inspection);
+    const field = element("textarea", "", inspection);
+    field.id = "benchmark-result";
+    field.setAttribute("aria-label", "Inspectable verification evidence");
+    field.readOnly = true;
+    field.rows = 6;
+    // Factual result only: never include storage, auth, session or owning URL.
+    field.value = JSON.stringify(result, null, 2);
+  }
   if (!result.claims.length)
     element(
       "p",

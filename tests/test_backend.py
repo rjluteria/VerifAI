@@ -46,6 +46,38 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_fragment_aliases_reuse_transport_across_discovery_and_keep_both_tracks(
+        self,
+    ):
+        calls = []
+
+        def fetch(url):
+            calls.append(url)
+            return {
+                "url": "https://example.org/fact",
+                "text": "The module weighs 8 kilograms.",
+                "accessible": True,
+                "checked_at": 123,
+                "sha256": "abc",
+            }
+
+        result = Engine(
+            Reviewers(), fetch, lambda text: ["https://example.org/fact#b"]
+        ).verify("The module weighs 8 kilograms.", ["https://example.org/fact#a"])
+        self.assertEqual(calls, ["https://example.org/fact#a"])
+        row = result["claims"][0]
+        self.assertEqual(row["label"], "SUPPORTED")
+        self.assertEqual(row["errors"], [])
+        citation = row["tracks"]["citation"][0]
+        independent = row["tracks"]["independent"][0]
+        self.assertEqual(citation["url"], "https://example.org/fact#a")
+        self.assertEqual(independent["url"], "https://example.org/fact#b")
+        self.assertEqual(independent["duplicate_of"], citation["url"])
+        self.assertEqual(independent["checked_at"], citation["checked_at"])
+        self.assertEqual(
+            independent["evidence_packet"]["origin_id"], citation["source_id"]
+        )
+
     def test_same_standby_twice_is_incomplete_even_when_both_calls_succeed(self):
         class DuplicateStandby(Reviewers):
             def review(self, name, claim, evidence):

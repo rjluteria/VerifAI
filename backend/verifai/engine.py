@@ -542,6 +542,7 @@ class Engine:
             claims = claims[:60]
         documents = {}
         source_ids = {}
+        transport_origins = {}
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
 
@@ -572,19 +573,39 @@ class Engine:
                     }
             return documents[url]
 
+        def transport_key(url):
+            try:
+                return urlsplit(url)._replace(fragment="").geturl()
+            except (TypeError, ValueError):
+                # Let the existing fetch policy record malformed destinations
+                # as unavailable rather than failing the whole acquisition job.
+                return url
+
         def prefetch(urls):
             pending = [url for url in dict.fromkeys(urls) if url not in documents]
             if not pending:
                 return
             for url in pending:
                 source_ids.setdefault(url, len(source_ids) + 1)
-            # Bound source I/O without changing review order or network policy.
+            # Fragments never reach the HTTP server. Reuse that exact transport
+            # snapshot within this job, keeping every original URL and track.
+            representatives = []
+            for url in pending:
+                key = transport_key(url)
+                if key not in transport_origins:
+                    transport_origins[key] = url
+                    representatives.append(url)
+            # Only this coordinator mutates alias mappings; source I/O remains
+            # bounded and distinct paths/redirect aliases still fetch separately.
             with ThreadPoolExecutor(max_workers=2) as pool:
                 futures = [
-                    pool.submit(copy_context().run, source, url) for url in pending
+                    pool.submit(copy_context().run, source, url)
+                    for url in representatives
                 ]
                 for future in futures:
                     future.result()
+            for url in pending:
+                documents[url] = documents[transport_origins[transport_key(url)]]
 
         def discover(claim, claim_id):
             try:

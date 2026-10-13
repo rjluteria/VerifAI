@@ -303,3 +303,23 @@ test("owned job trace is collapsed and appears only in the developer build", asy
     f.dom.window.close();
   }
 });
+
+test("private evidence inspection contains only the rendered factual result", async () => {
+  for (const benchmarkTiming of [false, true]) {
+    const f = await setup({ benchmarkTiming });
+    f.data.first.auth = "private-credential-fixture";
+    f.data.first.url = "https://chatgpt.com/c/private-conversation-fixture";
+    await f.listeners[0]();
+    const field = f.dom.window.document.querySelector("#benchmark-result");
+    if (benchmarkTiming) {
+      assert.equal(field.readOnly, true);
+      assert.equal(field.closest("details").open, false);
+      assert.deepEqual(JSON.parse(field.value), f.data.first.result);
+      assert.doesNotMatch(
+        field.value,
+        /private-credential|private-conversation/,
+      );
+    } else assert.equal(field, null);
+    f.dom.window.close();
+  }
+});
