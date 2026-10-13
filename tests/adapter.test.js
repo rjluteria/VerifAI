@@ -582,3 +582,17 @@ test("archived native intensity DOM retains fact and citation without caption at
   ]);
   f.page.window.close();
 });
+
+test("successive caption lines share the factual predecessor and retain source order", async () => {
+  const f = await fixture(
+    '<p>The module weighs 8 kilograms.\n<span><a href="https://example.org/a">Source 1</a></span>\n<span><a href="https://example.org/b">Reference 2</a></span><br><a href="https://example.org/a">Source 1</a></p>',
+    { modern: true },
+  );
+  assert.equal(f.sent.length, 1);
+  assert.equal(f.sent[0].text, "The module weighs 8 kilograms.");
+  assert.deepEqual(Array.from(f.sent[0].citations), [
+    "https://example.org/a",
+    "https://example.org/b",
+  ]);
+  f.window.close();
+});

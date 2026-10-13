@@ -115,7 +115,12 @@
         )
       )
         line.forEach((part) => {
-          if (captionAnchors.has(part.anchor)) metadataAnchors.add(part.anchor);
+          if (captionAnchors.has(part.anchor)) {
+            metadataAnchors.add(part.anchor);
+            // Later caption lines must see the factual predecessor, rather
+            // than a previous metadata label becoming their predecessor.
+            part.anchor.remove();
+          }
         });
       line = [];
     }
