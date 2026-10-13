@@ -156,6 +156,14 @@ test("developer clock waits for complete visible rendering and preserves its fir
     f.dom.window.document.querySelector("#benchmark-timing").textContent,
     /final result rendered after 1700\.000 ms/,
   );
+  const firstClock = JSON.parse(
+    f.dom.window.document.querySelector("#benchmark-clock-record").value,
+  );
+  assert.equal(firstClock.started_epoch_ms, 1000);
+  assert.equal(firstClock.visible_final_epoch_ms, 2700);
+  assert.equal(firstClock.elapsed_ms, 1700);
+  assert.equal(firstClock.cached, false);
+  assert.equal(firstClock.clock_valid, true);
   f.data.storageNotice = "Fixture notice.";
   now = 5000;
   await f.listeners[0]();
@@ -164,6 +172,12 @@ test("developer clock waits for complete visible rendering and preserves its fir
   assert.match(
     f.dom.window.document.querySelector("#benchmark-timing").textContent,
     /1700\.000 ms/,
+  );
+  assert.deepEqual(
+    JSON.parse(
+      f.dom.window.document.querySelector("#benchmark-clock-record").value,
+    ),
+    firstClock,
   );
   Object.assign(f.data.first, {
     benchmarkStartedAt: 4900,

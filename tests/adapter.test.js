@@ -515,13 +515,13 @@ test("inline factual anchors and structured table identifiers are not discarded 
     f.window.close();
   }
 });
-test("caption line removal preserves factual text after a break and delayed citation hydration", async () => {
+test("ambiguous mid-block links preserve material text through delayed hydration", async () => {
   const f = await fixture(
     '<p>First factual statement.<br><a href="https://example.org/a">Source 1</a><br>Second factual statement.</p>',
   );
   assert.equal(
     f.sent[0].text,
-    "First factual statement.\n\nSecond factual statement.",
+    "First factual statement.\nSource 1\nSecond factual statement.",
   );
   f.window.document
     .querySelector("p")
@@ -595,4 +595,20 @@ test("successive caption lines share the factual predecessor and retain source o
     "https://example.org/b",
   ]);
   f.window.close();
+});
+
+test("a source-shaped subject after an earlier sentence is never lost on a line break", async () => {
+  for (const continuation of [
+    "reported 12 observations.",
+    "Reported 12 observations.",
+  ]) {
+    const f = await fixture(
+      '<p>An earlier factual sentence.\n<a href="https://example.org/a">Source 1</a>\n' +
+        continuation +
+        "</p>",
+    );
+    assert.match(f.sent[0].text, /Source 1/);
+    assert.ok(f.sent[0].text.includes(continuation));
+    f.window.close();
+  }
 });

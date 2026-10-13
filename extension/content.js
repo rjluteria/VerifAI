@@ -72,15 +72,14 @@
     ].slice(0, 12);
     // Caption ownership is determined by a semantic line, not its paragraph.
     // ChatGPT can put a fact and its caption in one <p> separated by a newline.
+    const isCaption = (anchor) =>
+      citations.includes(anchor.href) &&
+      !anchor.closest("table,pre,code") &&
+      /^(?:\[\s*)?(?:source|citation|reference)\s*[:#]?\s*\d+(?:\s*\])?[.]?$/i.test(
+        anchor.textContent.trim(),
+      );
     const captionAnchors = new Set(
-      [...clone.querySelectorAll("a[href]")].filter(
-        (anchor) =>
-          citations.includes(anchor.href) &&
-          !anchor.closest("table,pre,code") &&
-          /^(?:\[\s*)?(?:source|citation|reference)\s*[:#]?\s*\d+(?:\s*\])?[.]?$/i.test(
-            anchor.textContent.trim(),
-          ),
-      ),
+      [...clone.querySelectorAll("a[href]")].filter(isCaption),
     );
     const metadataAnchors = new Set();
     let line = [];
@@ -99,6 +98,20 @@
         before.setEndBefore(firstAnchor);
         completePredecessor = /[.!?][”'"\)\]]*$/.test(before.toString().trim());
       }
+      let metadataTail = false;
+      if (firstAnchor) {
+        const lastAnchor = line
+          .filter((part) => captionAnchors.has(part.anchor))
+          .at(-1).anchor;
+        const after = document.createRange();
+        after.setStartAfter(lastAnchor);
+        after.setEnd(block, block.childNodes.length);
+        const remainder = after.cloneContents();
+        remainder.querySelectorAll("a[href]").forEach((anchor) => {
+          if (isCaption(anchor)) anchor.remove();
+        });
+        metadataTail = /^[\s,;·|()[\]–—-]*$/.test(remainder.textContent);
+      }
       const isolatedBlock =
         block.textContent.trim() ===
         line
@@ -107,7 +120,7 @@
           .trim();
       if (
         firstAnchor &&
-        (isolatedBlock || completePredecessor) &&
+        (isolatedBlock || (completePredecessor && metadataTail)) &&
         line.every(
           (part) =>
             captionAnchors.has(part.anchor) ||

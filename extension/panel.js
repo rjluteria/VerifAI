@@ -172,10 +172,10 @@ async function render() {
         if (last !== checkpoint || document.visibilityState !== "visible")
           return;
         if (!benchmarkRenders.has(data.benchmarkRun)) {
-          benchmarkRenders.set(
-            data.benchmarkRun,
-            Date.now() - data.benchmarkStartedAt,
-          );
+          benchmarkRenders.set(data.benchmarkRun, {
+            startedAt: data.benchmarkStartedAt,
+            renderedAt: Date.now(),
+          });
           if (benchmarkRenders.size > 200)
             benchmarkRenders.delete(benchmarkRenders.keys().next().value);
         }
@@ -187,11 +187,33 @@ async function render() {
           : incomplete
             ? "incomplete result rendered"
             : "final result rendered";
-        const elapsed = benchmarkRenders.get(data.benchmarkRun);
+        const measurement = benchmarkRenders.get(data.benchmarkRun);
+        const elapsed = measurement.renderedAt - measurement.startedAt;
         const validClock =
           data.benchmarkClock === "wall-clock-v3" &&
           data.benchmarkClockOrigin === "dispatcher" &&
           elapsed > 0;
+        const clockRecord = element("textarea", "", root);
+        clockRecord.id = "benchmark-clock-record";
+        clockRecord.setAttribute("aria-label", "Native render clock record");
+        clockRecord.readOnly = true;
+        clockRecord.rows = 3;
+        clockRecord.value = JSON.stringify({
+          started_epoch_ms: measurement.startedAt,
+          visible_final_epoch_ms: measurement.renderedAt,
+          elapsed_ms: elapsed,
+          clock: data.benchmarkClock,
+          origin: data.benchmarkClockOrigin,
+          clock_valid: validClock,
+          complete: !incomplete,
+          cached: Boolean(data.benchmarkRestored),
+          job_id: typeof data.job === "string" ? data.job : null,
+          submission_attempts: Number.isInteger(
+            data.benchmarkSubmissionAttempts,
+          )
+            ? data.benchmarkSubmissionAttempts
+            : null,
+        });
         element(
           "p",
           validClock
