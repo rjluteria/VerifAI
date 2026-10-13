@@ -74,6 +74,9 @@ class PackageTests(unittest.TestCase):
                     self.assertNotIn(
                         b"benchmark", archive.read("settings.html").lower()
                     )
+                    # The structure-aware punctuation rule contains Unicode.
+                    # Packaging must decode UTF-8 even on Windows code pages.
+                    self.assertIn("”", archive.read("content.js").decode("utf-8"))
         self.assertEqual((root / "extension/config.js").read_bytes(), original)
 
     def test_unsafe_developer_origins_rejected_before_archive(self):

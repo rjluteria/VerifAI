@@ -36,11 +36,13 @@ def main():
     )
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1]
-    manifest = json.loads((root / "extension/manifest.json").read_text())
+    manifest = json.loads(
+        (root / "extension/manifest.json").read_text(encoding="utf-8")
+    )
     assert "<all_urls>" not in json.dumps(manifest)
     assert manifest["manifest_version"] == 3
     replacements = {}
-    config = (root / "extension/config.js").read_text()
+    config = (root / "extension/config.js").read_text(encoding="utf-8")
     config, count = re.subn(
         r"export const BENCHMARK_TIMING = (?:true|false);",
         "export const BENCHMARK_TIMING = "
@@ -49,7 +51,7 @@ def main():
         config,
     )
     assert count == 1
-    content = (root / "extension/content.js").read_text()
+    content = (root / "extension/content.js").read_text(encoding="utf-8")
     content, count = re.subn(
         r"const BENCHMARK_TIMING = (?:true|false);",
         "const BENCHMARK_TIMING = "
