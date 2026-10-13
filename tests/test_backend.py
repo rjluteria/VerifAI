@@ -46,6 +46,33 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_same_standby_twice_is_incomplete_even_when_both_calls_succeed(self):
+        class DuplicateStandby(Reviewers):
+            def review(self, name, claim, evidence):
+                return {
+                    "model": "same-standby",
+                    "label": "SUPPORTED",
+                    "quotes": [evidence],
+                    "reason": "Supplied proof.",
+                }
+
+        def fetch(url):
+            return {
+                "url": url,
+                "text": "The module weighs 8 kilograms.",
+                "accessible": True,
+                "checked_at": 123,
+                "sha256": "abc",
+            }
+
+        result = Engine(DuplicateStandby(), fetch, lambda text: []).verify(
+            "The module weighs 8 kilograms.", ["https://example.org/proof"]
+        )
+        row = result["claims"][0]
+        self.assertEqual(row["label"], "UNVERIFIED")
+        self.assertIn("Evidence review could not be completed.", row["errors"])
+        self.assertEqual(row["tracks"]["citation"][0]["snippets"], [])
+
     def test_unresolved_browser_destination_failure_admits_no_new_transport(self):
         with patch("verifai.sources.fetch") as transport:
             for url in ("https://www.webel.com.au/node/2495", "https://webel.com.au/"):

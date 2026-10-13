@@ -363,7 +363,7 @@ def classify(models, claim, evidence):
             "reason": "Independent evidence review could not be completed.",
             "quotes": [],
             "reviews": assessments,
-            "failures": failures,
+            "failures": failures or ["Distinct independent reviewers unavailable."],
             **diagnostic,
         }
     labels = {row["label"] for row in assessments}
