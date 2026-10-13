@@ -22,7 +22,7 @@ from verifai.engine import (
 from verifai.model import ModelError, Models, retry_delay
 from verifai.network import FetchRejected, destination
 from verifai.server import Service, handler, strict_json, valid_request
-from verifai.sources import Text, discovery
+from verifai.sources import Text, allowed, discovery
 
 
 class Reviewers:
@@ -46,6 +46,15 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_unresolved_browser_destination_failure_admits_no_new_transport(self):
+        with patch("verifai.sources.fetch") as transport:
+            for url in ("https://www.webel.com.au/node/2495", "https://webel.com.au/"):
+                with self.assertRaisesRegex(
+                    FetchRejected, "browser-access-unconfirmed"
+                ):
+                    allowed(url)
+            transport.assert_not_called()
+
     def test_retrieval_overlap_preserves_both_tracks_and_single_transport(self):
         rendezvous = threading.Barrier(2)
         fetched = []

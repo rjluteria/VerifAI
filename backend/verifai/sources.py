@@ -59,6 +59,11 @@ def allowed(url):
     host = (origin.hostname or "").lower().rstrip(".")
     if host == "chegg.com" or host.endswith(".chegg.com"):
         raise FetchRejected("provider-browser-access-restricted")
+    # Historical user DNS/browser failure is unresolved and browser rechecking
+    # is restricted. Retain the requested destination but admit no new proof
+    # until access can be independently established; alternate discovery remains.
+    if host == "webel.com.au" or host.endswith(".webel.com.au"):
+        raise FetchRejected("provider-browser-access-unconfirmed")
     robots_url = urlunsplit((origin.scheme, origin.netloc, "/robots.txt", "", ""))
     try:
         robots = fetch(robots_url, max_bytes=200000, deadline=10)
