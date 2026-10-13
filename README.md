@@ -6,6 +6,8 @@ This is a development build. A Supported result means retrieved evidence support
 
 VerifAI puts the evidence beside each assertion so readers can inspect what supports it, what conflicts with it, and what remains unresolved.
 
+The strict five-second fresh-verification target is not met. The current native warm cohort recorded 12 deadline misses, including one incomplete response; complete results took 35.113–398.339 seconds. Six separate cache restorations took 26–79 milliseconds and do not establish fresh-verification speed. Bounded native gold labels matched 17/18 eligible atoms; an inaccessible-source abstention missed one expected label. One citation-caption layout still produces a spurious non-factual item and incomplete analysis. Keep this build private until the final evidence and remaining gates are reviewed.
+
 | Status              | Meaning                                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
 | Supported           | Retrieved evidence supports all material assertions under the implemented checks.                                    |
