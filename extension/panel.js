@@ -53,6 +53,14 @@ async function render() {
       `Benchmark: browser submission attempts ${data.benchmarkSubmissionAttempts}.`,
       root,
     ).id = "benchmark-submissions";
+  if (BENCHMARK_TIMING && typeof data?.job === "string")
+    element("p", `Benchmark job: ${data.job}`, root).id = "benchmark-job";
+  if (BENCHMARK_TIMING && data?.trace?.version === 1) {
+    const diagnostics = element("details", "", root);
+    element("summary", "Sanitized backend timing", diagnostics);
+    element("pre", JSON.stringify(data.trace), diagnostics).id =
+      "benchmark-causal-trace";
+  }
   if (!data?.result) return;
   const result = data.result;
   if (!result.claims.length)
@@ -112,7 +120,9 @@ async function render() {
         if (source.duplicate_of) {
           element(
             "p",
-            "Identical retrieved content; not independent corroboration of:",
+            source.duplicate_reason === "same_destination"
+              ? "Same original destination; not independent corroboration of:"
+              : "Identical retrieved content; not independent corroboration of:",
             section,
           );
           link(source.duplicate_of, section);

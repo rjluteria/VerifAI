@@ -6,9 +6,12 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
-from contextvars import ContextVar
+from contextvars import ContextVar, copy_context
 from email.utils import parsedate_to_datetime
+
+from .trace import measured
 
 _REQUEST_LOCK = threading.Lock()
 _LAST_REQUEST = 0.0
@@ -29,15 +32,27 @@ def decomposition_scope():
         _DECOMPOSITION_CACHE.reset(token)
 
 
+def request_interval():
+    try:
+        value = float(os.getenv("MODEL_REQUEST_INTERVAL_SECONDS", "3"))
+        return max(0, min(3, value)) if math.isfinite(value) else 3
+    except ValueError:
+        return 3
+
+
 def paced_open(request, timeout):
     global _LAST_REQUEST
     # Share pacing across all model instances/jobs in this server process.
-    with _REQUEST_LOCK:
-        wait = max(0, _LAST_REQUEST + 3 - time.monotonic())
-        if wait:
-            time.sleep(wait)
-        _LAST_REQUEST = time.monotonic()
-    return urllib.request.urlopen(request, timeout=timeout)
+    with measured("pacing_queue"):
+        with _REQUEST_LOCK:
+            wait = max(0, _LAST_REQUEST + request_interval() - time.monotonic())
+            if wait:
+                time.sleep(wait)
+            _LAST_REQUEST = time.monotonic()
+    with measured("provider_transport") as outcome:
+        response = urllib.request.urlopen(request, timeout=timeout)
+        outcome["http_status"] = getattr(response, "status", 200)
+        return response
 
 
 LABELS = {"SUPPORTED", "PARTIALLY_SUPPORTED", "CONTRADICTED", "UNVERIFIED"}
@@ -174,6 +189,29 @@ def retry_delay(value):
     return max(1, delay) if math.isfinite(delay) else 1
 
 
+def review_pair(models, claim, evidence, reconsider=False):
+    def one(name):
+        try:
+            review = models.review if hasattr(models, "review") else models.judge
+            kwargs = {"reconsider": True} if reconsider else {}
+            return {"model": name, **review(name, claim, evidence, **kwargs)}, None
+        except ModelError as error:
+            return None, str(error)
+
+    if getattr(models, "parallel_reviews", False):
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [
+                pool.submit(copy_context().run, one, name) for name in models.names
+            ]
+            values = [future.result() for future in futures]
+    else:
+        values = [one(name) for name in models.names]
+    return (
+        [value for value, error in values if value is not None],
+        [error for value, error in values if error is not None],
+    )
+
+
 class Models:
     def __init__(self):
         self.names = [
@@ -181,6 +219,7 @@ class Models:
             os.getenv("FALLBACK_MODEL", "poolside/laguna-xs-2.1"),
         ]
         self.key = os.getenv("NVIDIA_API_KEY", "")
+        self.parallel_reviews = os.getenv("PARALLEL_REVIEWS", "0") == "1"
 
     def reconcile(self, claim, evidence):
         # A fresh pair during an observed cooldown would immediately reuse the
@@ -188,14 +227,9 @@ class Models:
         cooldown = max((_RATE_LIMITED_UNTIL.get(n, 0) for n in self.names), default=0)
         delay = min(120, max(0, cooldown - time.monotonic()))
         if delay:
-            time.sleep(delay)
-        assessments, failures = [], []
-        for name in self.names:
-            try:
-                assessments.append(self.review(name, claim, evidence, reconsider=True))
-            except ModelError as exc:
-                failures.append(str(exc))
-        return assessments, failures
+            with measured("cooldown_wait"):
+                time.sleep(delay)
+        return review_pair(self, claim, evidence, reconsider=True)
 
     def review(self, name, claim, evidence, reconsider=False):
         try:
@@ -227,11 +261,13 @@ class Models:
     def call(self, model, instruction, data, max_tokens=4096):
         if not self.key:
             raise ModelError("model-unconfigured")
-        slot = model_slot(model)
-        try:
-            return self._call(model, instruction, data, max_tokens)
-        finally:
-            slot.release()
+        with measured("model_call", model=model):
+            with measured("model_queue", model=model):
+                slot = model_slot(model)
+            try:
+                return self._call(model, instruction, data, max_tokens)
+            finally:
+                slot.release()
 
     def _call(self, model, instruction, data, max_tokens=4096):
         if not self.key:
@@ -263,7 +299,8 @@ class Models:
         for attempt in range(2):
             try:
                 with paced_open(req, timeout=60) as response:
-                    raw = response.read(1000001)
+                    with measured("provider_body", model=model, attempt=attempt):
+                        raw = response.read(1000001)
                 if len(raw) > 1000000:
                     raise ModelError("model-response-size")
                 result = json.loads(raw)["choices"][0]
@@ -284,11 +321,13 @@ class Models:
                     or delay > 60
                 ):
                     raise ModelError("model-http-" + str(status)) from None
-                time.sleep(delay)
+                with measured("retry_wait", model=model, attempt=attempt):
+                    time.sleep(delay)
             except (TimeoutError, OSError, ValueError, TypeError, KeyError, IndexError):
                 if attempt:
                     raise ModelError("model-invalid-or-unavailable") from None
-                time.sleep(1)
+                with measured("retry_wait", model=model, attempt=attempt):
+                    time.sleep(1)
         raise ModelError("model-unavailable")
 
     def judge(self, name, claim, evidence, reconsider=False, _atomic=False):
@@ -533,8 +572,12 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     "Authorization": "Bearer " + self.key,
                 },
             )
-            with paced_open(req, timeout=20) as response:
-                raw = response.read(2000001)
+            with measured(
+                "embedding", model="nvidia/nemotron-3-embed-1b", count=len(texts)
+            ):
+                with paced_open(req, timeout=20) as response:
+                    with measured("provider_body"):
+                        raw = response.read(2000001)
             if len(raw) > 2000000:
                 raise ModelError("embedding-size")
             rows = sorted(json.loads(raw)["data"], key=lambda row: row["index"])

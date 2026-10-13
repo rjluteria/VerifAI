@@ -13,7 +13,9 @@ from urllib.parse import urljoin, urlsplit, urlunsplit
 
 
 class FetchRejected(Exception):
-    pass
+    def __init__(self, message="", code=None):
+        super().__init__(message)
+        self.code = code
 
 
 def bounded_resolve(host, port, **kwargs):
@@ -146,7 +148,9 @@ def fetch(
                     redirect_check(url)
                 continue
             if response.status != 200:
-                raise FetchRejected("http-" + str(response.status))
+                raise FetchRejected(
+                    "http-" + str(response.status), code=response.status
+                )
             mime = response.getheader("Content-Type", "").split(";")[0].lower()
             if mime not in ("text/html", "text/plain", "application/json"):
                 raise FetchRejected("content-type")

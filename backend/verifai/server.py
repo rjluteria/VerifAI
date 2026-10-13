@@ -13,7 +13,8 @@ from urllib.parse import urlsplit
 from .engine import Engine
 from .model import Models
 from .runtime import process_metrics
-from .sources import discovery, document
+from .sources import discovery, document, encyclopedia
+from .trace import Trace, measured, trace_scope
 
 
 class BoundedServer(ThreadingHTTPServer):
@@ -56,6 +57,7 @@ class Service:
     def __init__(self, engine):
         self.engine = engine
         self.runtime_diagnostics = os.getenv("ENABLE_RUNTIME_DIAGNOSTICS") == "1"
+        self.causal_diagnostics = os.getenv("ENABLE_CAUSAL_DIAGNOSTICS") == "1"
         self.secret = os.getenv("SESSION_SECRET", secrets.token_hex(32)).encode()
         self.origins = set(filter(None, os.getenv("ALLOWED_ORIGINS", "").split(",")))
         self.lock = threading.RLock()
@@ -160,13 +162,17 @@ class Service:
                     if key in self.jobs:
                         self.jobs[key]["stage"] = stage
 
+            tracer = Trace(key) if self.causal_diagnostics else None
             try:
-                result = self.engine.verify(
-                    payload["text"], payload["citations"], progress
-                )
+                with trace_scope(tracer), measured("job"):
+                    result = self.engine.verify(
+                        payload["text"], payload["citations"], progress
+                    )
                 with self.lock:
                     if key in self.jobs:
                         self.jobs[key].update(stage="Complete", result=result)
+                        if tracer:
+                            self.jobs[key]["trace"] = tracer.snapshot()
                         self.completed.notify_all()
             except Exception:
                 with self.lock:
@@ -175,6 +181,8 @@ class Service:
                             stage="Failed",
                             error="Verification unavailable; retry later.",
                         )
+                        if tracer:
+                            self.jobs[key]["trace"] = tracer.snapshot()
                         self.completed.notify_all()
             finally:
                 self.running.release()
@@ -333,7 +341,7 @@ def handler(service):
 
 
 def main():
-    service = Service(Engine(Models(), document, discovery))
+    service = Service(Engine(Models(), document, discovery, encyclopedia))
     if (
         not service.origins
         or not os.getenv("SESSION_SECRET")

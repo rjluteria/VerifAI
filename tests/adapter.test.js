@@ -481,3 +481,104 @@ test("the load-error phrase inside a factual response is not a blanket filter", 
   assert.match(f.sent[0].text, /Mercury rotates/);
   f.window.close();
 });
+
+test("caption extraction follows actual hydrated semantic lines, retaining citation order", async () => {
+  for (const markup of [
+    '<p>A factual statement.\n<span><span role="presentation"><a href="https://example.org/a"><span>Source 1</span><svg></svg></a></span></span></p>',
+    '<p>A factual statement.<br><span><a href="https://example.org/a">Citation #1</a></span></p>',
+    '<div><p>A factual statement.</p><div><span><a href="https://example.org/a">[Reference 1]</a></span></div></div>',
+    '<p>A factual statement.\n<a href="https://example.org/a">Source 1</a> <a href="https://example.org/b">Reference 2</a></p>',
+  ]) {
+    const f = await fixture(markup, { modern: true });
+    assert.equal(f.sent.length, 1);
+    assert.equal(f.sent[0].text, "A factual statement.");
+    assert.equal(f.sent[0].citations[0], "https://example.org/a");
+    if (markup.includes("example.org/b"))
+      assert.deepEqual(Array.from(f.sent[0].citations), [
+        "https://example.org/a",
+        "https://example.org/b",
+      ]);
+    f.window.close();
+  }
+});
+test("inline factual anchors and structured table identifiers are not discarded as captions", async () => {
+  for (const markup of [
+    '<p><a href="https://example.org/a">Source 1</a> reported 12 observations.</p>',
+    '<p><a href="https://example.org/a">The instrument weighs 3 kg.</a></p>',
+    '<table><tr><th>Instrument</th><th>Count</th></tr><tr><td><a href="https://example.org/a">Source 1</a></td><td>12</td></tr></table>',
+  ]) {
+    const f = await fixture(markup);
+    assert.match(f.sent[0].text, /Source 1|instrument weighs 3 kg/);
+    assert.deepEqual(Array.from(f.sent[0].citations), [
+      "https://example.org/a",
+    ]);
+    f.window.close();
+  }
+});
+test("caption line removal preserves factual text after a break and delayed citation hydration", async () => {
+  const f = await fixture(
+    '<p>First factual statement.<br><a href="https://example.org/a">Source 1</a><br>Second factual statement.</p>',
+  );
+  assert.equal(
+    f.sent[0].text,
+    "First factual statement.\n\nSecond factual statement.",
+  );
+  f.window.document
+    .querySelector("p")
+    .insertAdjacentHTML(
+      "beforeend",
+      '\n<span><a href="https://example.org/b">Source 2</a></span>',
+    );
+  f.setClock(3000);
+  await f.scan();
+  assert.equal(f.sent.length, 1);
+  f.setClock(5000);
+  await f.scan();
+  assert.equal(f.sent.length, 2);
+  assert.deepEqual(Array.from(f.sent[1].citations), [
+    "https://example.org/a",
+    "https://example.org/b",
+  ]);
+  assert.equal(f.sent[1].text, f.sent[0].text);
+  f.window.close();
+});
+
+test("a caption-shaped linked subject with a continuing assertion remains factual text", async () => {
+  const f = await fixture(
+    '<p><a href="https://example.org/a">Source 1</a>\nreported 12 observations.</p>',
+  );
+  assert.equal(f.sent[0].text, "Source 1\nreported 12 observations.");
+  f.window.close();
+});
+
+test("computed inline wrappers retain factual linked subjects and block facts retain separation", async () => {
+  const inline = await fixture(
+    '<div><span>The </span><div style="display:inline"><a href="https://example.org/a">Source 1</a></div><span> reported 12 observations.</span></div>',
+  );
+  assert.equal(inline.sent[0].text, "The Source 1 reported 12 observations.");
+  inline.window.close();
+  const blocks = await fixture(
+    '<div>First factual statement.</div><div>Second factual statement.</div><div><a href="https://example.org/a">Source 1</a></div>',
+  );
+  assert.equal(
+    blocks.sent[0].text,
+    "First factual statement.\n\nSecond factual statement.",
+  );
+  blocks.window.close();
+});
+
+test("archived native intensity DOM retains fact and citation without caption atom", async () => {
+  const f = await fixture(
+    '<p class="TextBase-hXhSqg Text-lIMP0_" data-d-text-flow="" data-d-component="text">Earthquake intensity describes ground shaking at a particular locality.\n<span class="Trigger-C5mz9C" data-d-component="popover-trigger" data-d-inline="" data-d-inline-text="" role="presentation" type="button" aria-haspopup="dialog" aria-expanded="false" data-state="closed"><a class="" href="https://www.usgs.gov/publications/magnitude-and-intensity-measures-earthquake-size-and-severity" rel="noopener noreferrer" target="_blank"><span class="TextBase-hXhSqg Text-lIMP0_" data-d-text-flow="" data-d-component="text" data-d-inline="" data-d-text-decoration="underline-dotted">Source 1</span><span class="ms-1"><svg width="1em" height="1em" viewBox="0 0 24 24" fill="currentColor" data-d-component="icon" data-d-inline="" style="display: inline-block; vertical-align: text-bottom;"><path fill-rule="evenodd" d="M16.243 6.757a1 1 0 0 1 1 1v7.072a1 1 0 0 1-2 0v-4.657L8.464 16.95a1 1 0 0 1-1.414-1.414l6.778-6.779H9.172a1 1 0 0 1 0-2h7.07Z" clip-rule="evenodd"></path></svg></span></a></span></p>',
+    { modern: true },
+  );
+  assert.equal(f.sent.length, 1);
+  assert.equal(
+    f.sent[0].text,
+    "Earthquake intensity describes ground shaking at a particular locality.",
+  );
+  assert.deepEqual(Array.from(f.sent[0].citations), [
+    "https://www.usgs.gov/publications/magnitude-and-intensity-measures-earthquake-size-and-severity",
+  ]);
+  f.page.window.close();
+});

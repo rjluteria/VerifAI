@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import time
@@ -6,7 +7,8 @@ from contextvars import copy_context
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import urlsplit
 
-from .model import ModelError, decomposition_scope
+from .model import decomposition_scope, review_pair
+from .trace import measured
 
 # Final reasons describe the validated category only. Free-form reviewer prose
 # can introduce measurements or facts absent from the admitted quotations.
@@ -320,13 +322,7 @@ def classify(models, claim, evidence):
             "reason": "No reviewable evidence was selected for this check.",
             "quotes": [],
         }
-    assessments, failures = [], []
-    for name in models.names:
-        try:
-            review = models.review if hasattr(models, "review") else models.judge
-            assessments.append({"model": name, **review(name, claim, evidence)})
-        except ModelError as exc:
-            failures.append(str(exc))
+    assessments, failures = review_pair(models, claim, evidence)
     initial_reviews = []
     reconsidered = False
     if hasattr(models, "reconcile") and (
@@ -528,20 +524,24 @@ def aggregate(rows):
 
 
 class Engine:
-    def __init__(self, models, fetcher, search):
+    def __init__(self, models, fetcher, search, fallback_search=None):
         self.models, self.fetcher, self.search = models, fetcher, search
+        self.fallback_search = fallback_search
 
     def verify(self, text, citations, progress=lambda stage: None):
         deadline = time.monotonic() + 900
         citations = list(dict.fromkeys(citations))
         progress("Analyzing claims")
-        claims, unsupported = self.models.extract(text)
+        with measured("claim_extraction") as counts:
+            claims, unsupported = self.models.extract(text)
+            counts["count"] = len(claims)
         if len(claims) > 60:
             unsupported.append(
                 "Claims beyond the first 60 were not verified in this request."
             )
             claims = claims[:60]
         documents = {}
+        source_ids = {}
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
 
@@ -555,7 +555,15 @@ class Engine:
                     }
                     return documents[url]
                 try:
-                    documents[url] = self.fetcher(url)
+                    with measured(
+                        "source_fetch", count=1, source_id=source_ids[url]
+                    ) as outcome:
+                        try:
+                            documents[url] = self.fetcher(url)
+                            outcome["accessible"] = documents[url]["accessible"]
+                        except Exception:
+                            outcome["accessible"] = False
+                            raise
                 except Exception:
                     documents[url] = {
                         "url": url,
@@ -568,6 +576,8 @@ class Engine:
             pending = [url for url in dict.fromkeys(urls) if url not in documents]
             if not pending:
                 return
+            for url in pending:
+                source_ids.setdefault(url, len(source_ids) + 1)
             # Bound source I/O without changing review order or network policy.
             with ThreadPoolExecutor(max_workers=2) as pool:
                 futures = [
@@ -576,12 +586,32 @@ class Engine:
                 for future in futures:
                     future.result()
 
+        def discover(claim, claim_id):
+            try:
+                with measured("search", claim_id=claim_id) as counts:
+                    found = self.search(claim)
+                    counts["count"] = len(found)
+                return found, []
+            except Exception:
+                return [], ["Independent discovery unavailable."]
+
         progress("Checking citations")
-        prefetch(citations)
+        first_discovery = None
+        if claims and citations and os.getenv("PARALLEL_RETRIEVAL", "0") == "1":
+            # Only independent discovery overlaps citation transport. Join before
+            # reviewing; the document cache has one transport owner throughout.
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                searching = pool.submit(
+                    copy_context().run, discover, claims[0]["text"], 1
+                )
+                prefetch(citations)
+                first_discovery = searching.result()
+        else:
+            prefetch(citations)
         output = []
         checked = 0
         check_budget = min(120, max(1, int(os.getenv("MAX_SOURCE_CHECKS", "60"))))
-        for item in claims:
+        for claim_id, item in enumerate(claims, 1):
             if time.monotonic() >= deadline:
                 output.append(
                     {
@@ -595,17 +625,50 @@ class Engine:
                 continue
             claim = item["text"]
             progress("Searching independent sources")
-            errors = []
-            try:
-                found = self.search(claim)
-            except Exception:
-                found = []
-                errors.append("Independent discovery unavailable.")
+            found, errors = (
+                first_discovery
+                if claim_id == 1 and first_discovery is not None
+                else discover(claim, claim_id)
+            )
             urls = list(dict.fromkeys(citations + found))[:16]
             progress("Verifying evidence")
-            prefetch(urls[: max(0, check_budget - checked)])
+            initial_urls = urls[: max(0, check_budget - checked)]
+            prefetch(initial_urls)
+            # Discovery returning URLs is not the same as acquiring usable pages.
+            # Keep original unavailable destinations, and use bounded independent
+            # discovery through the same fetch/SSRF policy, never search snippets.
+            slots = min(3, 16 - len(urls), check_budget - checked - len(initial_urls))
+            if (
+                self.fallback_search
+                and slots > 0
+                and not any(
+                    documents[url]["accessible"]
+                    for url in found
+                    if url in documents and url in initial_urls
+                )
+                and time.monotonic() < deadline
+            ):
+                try:
+                    with measured("alternate_search", claim_id=claim_id) as counts:
+                        alternatives = list(dict.fromkeys(self.fallback_search(claim)))
+                        counts["count"] = len(alternatives)
+                    alternatives = [url for url in alternatives if url not in urls][
+                        :slots
+                    ]
+                except Exception:
+                    alternatives = []
+                prefetch(alternatives)
+                found = list(dict.fromkeys(found + alternatives))
+                urls += alternatives
+                if any(documents[url]["accessible"] for url in alternatives):
+                    errors = [
+                        error
+                        for error in errors
+                        if error != "Independent discovery unavailable."
+                    ]
             tracks = {"citation": [], "independent": []}
             content_origins = {}
+            destination_origins = {}
             reviewed_content = {}
             for url in urls:
                 if time.monotonic() >= deadline:
@@ -626,6 +689,7 @@ class Engine:
                 if not doc["accessible"]:
                     result = {
                         "url": url,
+                        "source_id": source_ids[url],
                         "accessible": False,
                         "label": "UNVERIFIED",
                         "reason": doc["error"],
@@ -633,17 +697,28 @@ class Engine:
                     }
                 else:
                     if doc["text"] in reviewed_content:
-                        verdict, snippets = reviewed_content[doc["text"]]
+                        verdict, snippets, selected = reviewed_content[doc["text"]]
                     else:
                         candidates = passages(doc["text"], claim, limit=20)
                         cached_rank = getattr(self.models, "rank_cached", None)
-                        selected = (
-                            cached_rank(claim, candidates, query_cache)
-                            if cached_rank
-                            else self.models.rank(claim, candidates)
-                        )
+                        with measured(
+                            "ranking",
+                            count=len(candidates),
+                            source_id=source_ids[url],
+                            claim_id=claim_id,
+                        ):
+                            selected = (
+                                cached_rank(claim, candidates, query_cache)
+                                if cached_rank
+                                else self.models.rank(claim, candidates)
+                            )
                         evidence = "\n\n".join(p["text"] for p in selected)
-                        verdict = classify(self.models, claim, evidence)
+                        with measured(
+                            "classification",
+                            source_id=source_ids[url],
+                            claim_id=claim_id,
+                        ):
+                            verdict = classify(self.models, claim, evidence)
                         snippets = quoted_snippets(verdict, selected)
                         if snippets is None:
                             verdict = {
@@ -655,9 +730,10 @@ class Engine:
                                 ],
                             }
                             snippets = []
-                        reviewed_content[doc["text"]] = (verdict, snippets)
+                        reviewed_content[doc["text"]] = (verdict, snippets, selected)
                     result = {
                         "url": url,
+                        "source_id": source_ids[url],
                         "final_url": doc["url"],
                         "accessible": True,
                         "checked_at": doc["checked_at"],
@@ -672,9 +748,42 @@ class Engine:
                         marker = "Evidence review could not be completed."
                         if marker not in errors:
                             errors.append(marker)
-                    original = content_origins.setdefault(doc["text"], url)
+                    content_original = content_origins.setdefault(doc["text"], url)
+                    destination_original = destination_origins.setdefault(
+                        doc["url"], url
+                    )
+                    original = (
+                        content_original
+                        if content_original != url
+                        else destination_original
+                    )
                     if original != url:
                         result["duplicate_of"] = original
+                        result["duplicate_reason"] = (
+                            "identical_content"
+                            if content_original != url
+                            else "same_destination"
+                        )
+                    result["evidence_packet"] = {
+                        "source_id": source_ids[url],
+                        "claim_id": claim_id,
+                        "origin_id": source_ids[original],
+                        "attribution_status": "original attribution not established",
+                        "selected_spans": [
+                            {
+                                "start": passage["start"],
+                                "end": passage["end"],
+                                "sha256": hashlib.sha256(
+                                    passage["text"].encode()
+                                ).hexdigest(),
+                            }
+                            for passage in selected
+                        ],
+                        "sha256": doc["sha256"],
+                        "retrieved_at": doc["checked_at"],
+                        "publication_time": None,
+                        "context_scope": "exact selected source spans; unknown publication time",
+                    }
                     if verdict.get("review_reconsidered"):
                         result["review_reconsidered"] = True
                     if verdict.get("reviews"):
@@ -686,11 +795,13 @@ class Engine:
                 for tag in tags:
                     tracks[tag].append(result)
             combined = tracks["citation"] + tracks["independent"]
+            with measured("aggregation", count=len(combined), claim_id=claim_id):
+                final_label = aggregate(combined)
             output.append(
                 {
                     "text": claim,
                     "quote": item["quote"],
-                    "label": aggregate(combined),
+                    "label": final_label,
                     "tracks": tracks,
                     "errors": errors,
                 }

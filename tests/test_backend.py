@@ -46,6 +46,53 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_retrieval_overlap_preserves_both_tracks_and_single_transport(self):
+        rendezvous = threading.Barrier(2)
+        fetched = []
+        searched = []
+
+        def fetch(url):
+            fetched.append(url)
+            if url.endswith("cited"):
+                rendezvous.wait(timeout=2)
+            return {
+                "url": url,
+                "text": "The module weighs 8 kilograms.",
+                "accessible": True,
+                "checked_at": 123,
+                "sha256": "abc",
+            }
+
+        def search(claim):
+            searched.append(claim)
+            rendezvous.wait(timeout=2)
+            return ["https://example.org/cited", "https://example.org/independent"]
+
+        with patch.dict("os.environ", {"PARALLEL_RETRIEVAL": "1"}):
+            result = Engine(Reviewers(), fetch, search).verify(
+                "The module weighs 8 kilograms.", ["https://example.org/cited"]
+            )
+        self.assertEqual(len(searched), 1)
+        self.assertEqual(len(fetched), 2)
+        row = result["claims"][0]
+        self.assertEqual(row["errors"], [])
+        self.assertEqual(row["label"], "SUPPORTED")
+        self.assertEqual(len(row["tracks"]["citation"]), 1)
+        self.assertEqual(len(row["tracks"]["independent"]), 2)
+        self.assertEqual(
+            row["tracks"]["independent"][1]["duplicate_of"], "https://example.org/cited"
+        )
+        first = row["tracks"]["citation"][0]["evidence_packet"]
+        second = row["tracks"]["independent"][1]["evidence_packet"]
+        self.assertEqual(first["claim_id"], 1)
+        self.assertEqual(first["selected_spans"], second["selected_spans"])
+        self.assertEqual(first["selected_spans"][0]["start"], 0)
+        self.assertEqual(
+            first["selected_spans"][0]["end"], len("The module weighs 8 kilograms.")
+        )
+        self.assertEqual(len(first["selected_spans"][0]["sha256"]), 64)
+        self.assertIsNone(first["publication_time"])
+
     def test_unresolved_equally_credible_measurements_do_not_choose_a_value(self):
         for subject, unit, first, second in (
             ("building", "metres", "80", "90"),
@@ -1105,6 +1152,119 @@ class EngineTests(unittest.TestCase):
         result = engine.verify("A is B.", [doc["url"]])
         self.assertEqual(result["claims"][0]["label"], "SUPPORTED")
         self.assertTrue(result["claims"][0]["errors"])
+
+    def test_same_destination_packets_share_origin_without_reusing_changed_evidence(
+        self,
+    ):
+        class DifferentBodies(Reviewers):
+            def judge(self, name, claim, evidence):
+                return {
+                    "label": "SUPPORTED" if evidence == "A is B." else "CONTRADICTED",
+                    "reason": "fixture",
+                    "quotes": [evidence],
+                }
+
+        def get(url):
+            text = "A is B." if url.endswith("first") else "A is C."
+            return {
+                "url": "https://example.org/canonical",
+                "accessible": True,
+                "text": text,
+                "checked_at": 1,
+                "sha256": text,
+            }
+
+        result = Engine(
+            DifferentBodies(), get, lambda claim: ["https://example.org/second"]
+        ).verify("A is B.", ["https://example.org/first"])
+        claim = result["claims"][0]
+        self.assertEqual(claim["label"], "UNVERIFIED")
+        first, second = (
+            claim["tracks"]["citation"][0],
+            claim["tracks"]["independent"][0],
+        )
+        self.assertEqual(second["duplicate_reason"], "same_destination")
+        self.assertNotEqual(first["label"], second["label"])
+        self.assertEqual(
+            first["evidence_packet"]["origin_id"],
+            second["evidence_packet"]["origin_id"],
+        )
+        self.assertNotEqual(
+            first["evidence_packet"]["sha256"], second["evidence_packet"]["sha256"]
+        )
+
+    def test_acquisition_fallback_preserves_unavailable_destinations_and_both_tracks(
+        self,
+    ):
+        primary, alternative = (
+            "https://example.org/blocked",
+            "https://example.org/alternative",
+        )
+        queried, fetched = [], []
+
+        def get(url):
+            fetched.append(url)
+            if url == primary:
+                raise FetchRejected("restricted")
+            return {
+                "url": url,
+                "accessible": True,
+                "text": "A is B.",
+                "checked_at": 1,
+                "sha256": "new",
+            }
+
+        def fallback(claim):
+            queried.append(claim)
+            return [primary, alternative, alternative]
+
+        result = Engine(Reviewers(), get, lambda claim: [primary], fallback).verify(
+            "A is B.", [primary]
+        )
+        claim = result["claims"][0]
+        self.assertEqual(claim["label"], "SUPPORTED")
+        self.assertEqual(queried, ["A is B."])
+        self.assertEqual(fetched, [primary, alternative])
+        self.assertFalse(claim["tracks"]["citation"][0]["accessible"])
+        self.assertEqual(
+            [row["url"] for row in claim["tracks"]["independent"]],
+            [primary, alternative],
+        )
+        self.assertEqual(
+            claim["tracks"]["independent"][1]["snippets"][0]["text"], "A is B."
+        )
+
+    def test_acquisition_fallback_does_not_replace_a_readable_primary_or_exceed_budget(
+        self,
+    ):
+        fallback = lambda claim: self.fail("unexpected alternative discovery")
+        doc = lambda url: {
+            "url": url,
+            "accessible": True,
+            "text": "A is B.",
+            "checked_at": 1,
+            "sha256": "same",
+        }
+        Engine(
+            Reviewers(), doc, lambda claim: ["https://example.org/a"], fallback
+        ).verify("A is B.", [])
+        with patch.dict("os.environ", {"MAX_SOURCE_CHECKS": "1"}):
+            Engine(
+                Reviewers(),
+                lambda url: (_ for _ in ()).throw(FetchRejected()),
+                lambda claim: ["https://example.org/a"],
+                fallback,
+            ).verify("A is B.", [])
+
+    def test_alternative_search_failure_is_not_conclusive_proof(self):
+        fail = lambda *args: (_ for _ in ()).throw(
+            OSError("private error must not escape")
+        )
+        result = Engine(Reviewers(), fail, fail, fail).verify("A is B.", [])
+        claim = result["claims"][0]
+        self.assertEqual(claim["label"], "UNVERIFIED")
+        self.assertIn("Independent discovery unavailable.", claim["errors"])
+        self.assertNotIn("private error", json.dumps(result))
 
     def test_discovery_expands_query_without_treating_snippets_as_proof(self):
         responses = [

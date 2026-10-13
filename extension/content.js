@@ -23,7 +23,22 @@
     const clone = root.cloneNode(true);
     const originals = [root, ...root.querySelectorAll("*")],
       copies = [clone, ...clone.querySelectorAll("*")];
+    const semanticBlocks = new WeakSet();
     originals.forEach((node, i) => {
+      if (
+        [
+          "block",
+          "flow-root",
+          "flex",
+          "grid",
+          "list-item",
+          "table",
+          "table-row",
+          "table-cell",
+          "table-caption",
+        ].includes(getComputedStyle(node).display)
+      )
+        semanticBlocks.add(copies[i]);
       if (hidden(node)) copies[i]?.remove();
     });
     clone
@@ -55,17 +70,78 @@
           }),
       ),
     ].slice(0, 12);
-    // A standalone citation caption is metadata; its destination stays in citations.
-    clone.querySelectorAll("a[href]").forEach((anchor) => {
-      const caption = anchor.textContent.trim();
-      const paragraph = anchor.closest("p,li");
+    // Caption ownership is determined by a semantic line, not its paragraph.
+    // ChatGPT can put a fact and its caption in one <p> separated by a newline.
+    const captionAnchors = new Set(
+      [...clone.querySelectorAll("a[href]")].filter(
+        (anchor) =>
+          citations.includes(anchor.href) &&
+          !anchor.closest("table,pre,code") &&
+          /^(?:\[\s*)?(?:source|citation|reference)\s*[:#]?\s*\d+(?:\s*\])?[.]?$/i.test(
+            anchor.textContent.trim(),
+          ),
+      ),
+    );
+    const metadataAnchors = new Set();
+    let line = [];
+    function finishLine() {
+      const firstAnchor = line.find((part) =>
+        captionAnchors.has(part.anchor),
+      )?.anchor;
+      let block = firstAnchor?.parentElement;
+      while (block && block !== clone && !semanticBlocks.has(block))
+        block = block.parentElement;
+      block ||= clone;
+      let completePredecessor = false;
+      if (firstAnchor) {
+        const before = document.createRange();
+        before.setStart(block, 0);
+        before.setEndBefore(firstAnchor);
+        completePredecessor = /[.!?][”'"\)\]]*$/.test(before.toString().trim());
+      }
+      const isolatedBlock =
+        block.textContent.trim() ===
+        line
+          .map((part) => part.text)
+          .join("")
+          .trim();
       if (
-        citations.includes(anchor.href) &&
-        /^(?:source|citation|reference)\s*\d+$/i.test(caption) &&
-        paragraph?.textContent.trim() === caption
+        firstAnchor &&
+        (isolatedBlock || completePredecessor) &&
+        line.every(
+          (part) =>
+            captionAnchors.has(part.anchor) ||
+            /^[\s,;·|()[\]–—-]*$/.test(part.text),
+        )
       )
-        anchor.remove();
-    });
+        line.forEach((part) => {
+          if (captionAnchors.has(part.anchor)) metadataAnchors.add(part.anchor);
+        });
+      line = [];
+    }
+    function captionLines(node) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const pieces = node.textContent.split(/\r?\n/);
+        pieces.forEach((text, index) => {
+          if (index) finishLine();
+          line.push({ text, anchor: node.parentElement?.closest("a[href]") });
+        });
+        return;
+      }
+      if (node.nodeType !== Node.ELEMENT_NODE) return;
+      if (node.tagName === "BR") {
+        finishLine();
+        node.replaceWith("\n");
+        return;
+      }
+      const block = semanticBlocks.has(node);
+      if (block) finishLine();
+      [...node.childNodes].forEach(captionLines);
+      if (block) finishLine();
+    }
+    captionLines(clone);
+    finishLine();
+    metadataAnchors.forEach((anchor) => anchor.remove());
     clone.querySelectorAll("table").forEach((table) => {
       if (table.tHead?.rows.length > 1) {
         try {
@@ -164,11 +240,9 @@
         ].join("\n"),
       );
     });
-    clone
-      .querySelectorAll("p,li,h1,h2,h3,h4,pre,blockquote")
-      .forEach((node) => {
-        node.append("\n\n");
-      });
+    clone.querySelectorAll("*").forEach((node) => {
+      if (semanticBlocks.has(node)) node.append("\n\n");
+    });
     const text = clone.textContent.trim();
     return { text, citations };
   }

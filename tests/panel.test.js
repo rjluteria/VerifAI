@@ -278,3 +278,28 @@ test("handler fallback cannot establish a dispatcher-to-render latency pass", as
     /invalid render clock.*handler fallback.*No latency pass/,
   );
 });
+
+test("owned job trace is collapsed and appears only in the developer build", async () => {
+  for (const benchmarkTiming of [false, true]) {
+    const f = await setup({ benchmarkTiming });
+    f.data.first.job = "owned-synthetic-job";
+    f.data.first.trace = {
+      version: 1,
+      events: [{ stage: "search", count: 1 }],
+    };
+    await f.listeners[0]();
+    const node = f.dom.window.document.querySelector("#benchmark-causal-trace");
+    if (benchmarkTiming) {
+      assert.equal(node.closest("details").open, false);
+      assert.deepEqual(JSON.parse(node.textContent), f.data.first.trace);
+      assert.match(
+        f.dom.window.document.querySelector("#benchmark-job").textContent,
+        /owned-synthetic-job/,
+      );
+    } else {
+      assert.equal(node, null);
+      assert.equal(f.dom.window.document.querySelector("#benchmark-job"), null);
+    }
+    f.dom.window.close();
+  }
+});
