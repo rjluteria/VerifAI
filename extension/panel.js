@@ -59,7 +59,7 @@ function updateElapsed() {
     elapsed > 30000
   )
     setStatus(
-      timerData.executionState === "retrying"
+      ["retrying", "reconnecting"].includes(timerData.executionState)
         ? "Verification is taking longer than expected. Recovering connection…"
         : "Verification is taking longer than expected. Continuing…",
     );
@@ -125,7 +125,7 @@ async function render() {
           ? "Verification failed. Retry when available."
           : data?.executionState === "paused"
             ? data.stage
-            : data?.executionState === "retrying"
+            : ["retrying", "reconnecting"].includes(data?.executionState)
               ? overrun
                 ? "Verification is taking longer than expected. Recovering connection…"
                 : "Connection unavailable. Automatic recovery is pending."

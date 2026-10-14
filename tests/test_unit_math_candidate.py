@@ -131,3 +131,42 @@ class UnitMathCandidateTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ReferenceCacheTests(unittest.TestCase):
+    def test_identical_definition_context_reused_only_in_supplied_job_cache(self):
+        models = ReferenceReviewers()
+        evidence = "1 microgram of vitamin D is equal to 40 IU."
+        with patch.dict("os.environ", {"GROUNDED_UNIT_ARITHMETIC": "1"}):
+            cache = {}
+            first = classify(
+                models,
+                "25 micrograms of vitamin D equals 1000 International Units of vitamin D.",
+                evidence,
+                reference_cache=cache,
+            )
+            second = classify(
+                models,
+                "5 micrograms of vitamin D equals 250 International Units of vitamin D.",
+                evidence,
+                reference_cache=cache,
+            )
+            self.assertEqual(first["label"], "SUPPORTED")
+            self.assertEqual(second["label"], "CONTRADICTED")
+            self.assertTrue(second["review_reused_within_job"])
+            self.assertEqual(len(models.calls), 2)
+            classify(
+                models,
+                "5 micrograms of vitamin D equals 250 International Units of vitamin D.",
+                evidence,
+                reference_cache={},
+            )
+            self.assertEqual(len(models.calls), 4)
+            classify(
+                models,
+                "5 micrograms of vitamin D equals 250 International Units of vitamin D.",
+                evidence + " Context changed.",
+                reference_cache=cache,
+            )
+            self.assertEqual(len(models.calls), 6)
+        self.assertFalse(hasattr(models, "reference_cache"))

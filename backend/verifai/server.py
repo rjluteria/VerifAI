@@ -141,22 +141,49 @@ class Service:
                 job = self.jobs.get(key)
                 if job is None or job["owner"] != owner:
                     return None
-                return {k: v for k, v in job.items() if k not in ("owner", "expires")}
+                return {
+                    k: v
+                    for k, v in job.items()
+                    if k not in ("owner", "expires", "request_digest")
+                }
         finally:
             if held:
                 self.waiters.release()
 
     def start(self, owner, payload):
-        if not self.running.acquire(blocking=False):
-            return None
-        key = secrets.token_urlsafe(24)
-        status = JobProgress(key, payload.get("response_id"))
         with self.lock:
+            response_id = payload.get("response_id")
+            digest = (
+                hmac.new(
+                    self.secret,
+                    json.dumps(
+                        [payload["text"], payload["citations"]], ensure_ascii=False
+                    ).encode(),
+                    hashlib.sha256,
+                ).hexdigest()
+                if response_id
+                else None
+            )
+            if response_id:
+                for previous_key, job in self.jobs.items():
+                    if (
+                        job["owner"] == owner
+                        and job.get("progress", {}).get("response_id") == response_id
+                        and job["expires"] >= time.time()
+                    ):
+                        if job.get("request_digest") != digest:
+                            raise ValueError("response-id-conflict")
+                        return previous_key
+            if not self.running.acquire(blocking=False):
+                return None
+            key = secrets.token_urlsafe(24)
+            status = JobProgress(key, response_id)
             self.jobs[key] = {
                 "owner": owner,
                 "stage": "Analyzing claims",
                 "progress": status.snapshot(),
                 "expires": time.time() + 1800,
+                "request_digest": digest,
             }
 
         def work():
@@ -356,7 +383,10 @@ def handler(service):
                     raise ValueError()
             except (ValueError, OSError):
                 return self.reply(400, {"error": "payload"})
-            key = service.start(owner, payload)
+            try:
+                key = service.start(owner, payload)
+            except ValueError:
+                return self.reply(409, {"error": "response-id-conflict"})
             if key is None:
                 return self.reply(429, {"error": "busy"})
             return self.reply(202, {"job": key})

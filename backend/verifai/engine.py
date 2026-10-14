@@ -1,3 +1,4 @@
+import copy
 import hashlib
 import os
 import re
@@ -310,7 +311,7 @@ def bounded_abstention(claim, evidence):
 
 
 @decomposition_scope()
-def classify(models, claim, evidence, _unit_math=True):
+def classify(models, claim, evidence, _unit_math=True, reference_cache=None):
     deterministic = (
         bounded_abstention(claim, evidence)
         or partition_count(claim, evidence)
@@ -327,8 +328,12 @@ def classify(models, claim, evidence, _unit_math=True):
     if _unit_math and os.getenv("GROUNDED_UNIT_ARITHMETIC", "0") == "1":
         plan = plan_conversion(claim, evidence)
         if plan:
-            reference = classify(
-                models, plan.reference_claim, evidence, _unit_math=False
+            cache_key = (plan.reference_claim, evidence, tuple(models.names))
+            reused = reference_cache is not None and cache_key in reference_cache
+            reference = (
+                copy.deepcopy(reference_cache[cache_key])
+                if reused
+                else classify(models, plan.reference_claim, evidence, _unit_math=False)
             )
             reviews = reference.get("reviews", [])
             if (
@@ -342,12 +347,15 @@ def classify(models, claim, evidence, _unit_math=True):
                 )
             ):
                 label = plan.label()
+                if reference_cache is not None and not reused:
+                    reference_cache[cache_key] = copy.deepcopy(reference)
                 return {
                     **reference,
                     "label": label,
                     "reason": EVIDENCE_REASONS[label],
                     "derivation": plan.metadata(),
                     "review_scope": "quoted unit definition; complete claim derived by exact arithmetic",
+                    "review_reused_within_job": reused,
                 }
     assessments, failures = review_pair(models, claim, evidence)
     initial_reviews = []
@@ -573,6 +581,7 @@ class Engine:
         transport_origins = {}
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
+        reference_cache = {} if os.getenv("JOB_REFERENCE_CACHE", "0") == "1" else None
 
         def source(url):
             if url not in documents:
@@ -782,7 +791,12 @@ class Engine:
                             source_id=source_ids[url],
                             claim_id=claim_id,
                         ):
-                            verdict = classify(self.models, claim, evidence)
+                            verdict = classify(
+                                self.models,
+                                claim,
+                                evidence,
+                                reference_cache=reference_cache,
+                            )
                         snippets = quoted_snippets(verdict, selected)
                         if snippets is None:
                             verdict = {
@@ -874,6 +888,9 @@ class Engine:
                     if verdict.get("derivation"):
                         result["derivation"] = verdict["derivation"]
                         result["review_scope"] = verdict["review_scope"]
+                        result["review_reused_within_job"] = verdict.get(
+                            "review_reused_within_job", False
+                        )
                     if verdict.get("reviews"):
                         result["review_models"] = [
                             r["model"] for r in verdict["reviews"]

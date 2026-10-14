@@ -375,10 +375,16 @@ async function poll() {
               attempts: (value.attempts || 0) + 1,
               next: Date.now() + 60000,
               stage: "Service restarted; retrying verification.",
+              executionState: "retrying",
             },
             true,
           );
-        else await store(key, { ...value, stage: error.message }, true);
+        else
+          await store(
+            key,
+            { ...value, stage: error.message, executionState: "reconnecting" },
+            true,
+          );
         const changed = (await chrome.storage.session.get(key))[key];
         if (changed?.runId === value.runId)
           await publish(key, changed, changed.stage);
@@ -461,7 +467,12 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
           accepted: true,
           runId,
           runSequence: old.runSequence || 0,
-          summary: old.result ? summary(old.result) : old.stage,
+          summary: old.result
+            ? (old.result.unsupported.length ||
+              old.result.claims.some((c) => c.errors.length)
+                ? "Analysis incomplete · Cached · "
+                : "Check complete · Cached · ") + summary(old.result)
+            : "Verifying… · " + old.stage,
         };
       }
       const value = {

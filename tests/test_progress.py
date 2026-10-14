@@ -29,3 +29,36 @@ class ProgressTests(unittest.TestCase):
         for count in (True, -1, 61, "2"):
             status.update({"claim_count": count})
         self.assertNotIn("claim_count", status.snapshot())
+
+
+class IdempotentJobTests(unittest.TestCase):
+    def test_lost_submission_reply_reuses_only_same_owner_and_input(self):
+        import threading
+
+        from verifai.server import Service
+
+        release = threading.Event()
+
+        class Pending:
+            def verify(self, text, citations, progress):
+                release.wait(2)
+                return {"claims": [], "unsupported": []}
+
+        service = Service(Pending())
+        payload = {
+            "text": "Synthetic fact.",
+            "citations": [],
+            "response_id": "opaque-run",
+        }
+        try:
+            first = service.start("owner", payload)
+            self.assertEqual(service.start("owner", payload), first)
+            self.assertEqual(len(service.jobs), 1)
+            with self.assertRaises(ValueError):
+                service.start("owner", {**payload, "text": "Different synthetic fact."})
+            other = service.start("other-owner", payload)
+            self.assertNotEqual(first, other)
+            self.assertNotIn("request_digest", service.read_job("owner", first))
+            self.assertIsNone(service.read_job("other-owner", first))
+        finally:
+            release.set()
