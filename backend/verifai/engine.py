@@ -579,9 +579,30 @@ class Engine:
         documents = {}
         source_ids = {}
         transport_origins = {}
+        independent_urls = set()
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
         reference_cache = {} if os.getenv("JOB_REFERENCE_CACHE", "0") == "1" else None
+
+        def independent_counts():
+            # Count actual selected URL checks, not search snippets or originals.
+            # Reused URLs across claims remain one acquisition in this job.
+            progress(
+                {
+                    "tracks": {
+                        "independent": {
+                            "total": len(independent_urls),
+                            "completed": sum(
+                                url in documents for url in independent_urls
+                            ),
+                            "accessible": sum(
+                                documents.get(url, {}).get("accessible") is True
+                                for url in independent_urls
+                            ),
+                        }
+                    }
+                }
+            )
 
         def source(url):
             if url not in documents:
@@ -705,8 +726,11 @@ class Engine:
             )
             urls = list(dict.fromkeys(citations + found))[:16]
             progress("Verifying evidence")
+            independent_urls.update(url for url in urls if url in found)
+            independent_counts()
             initial_urls = urls[: max(0, check_budget - checked)]
             prefetch(initial_urls)
+            independent_counts()
             # Discovery returning URLs is not the same as acquiring usable pages.
             # Keep original unavailable destinations, and use bounded independent
             # discovery through the same fetch/SSRF policy, never search snippets.
@@ -730,7 +754,10 @@ class Engine:
                     ]
                 except Exception:
                     alternatives = []
+                independent_urls.update(alternatives)
+                independent_counts()
                 prefetch(alternatives)
+                independent_counts()
                 found = list(dict.fromkeys(found + alternatives))
                 urls += alternatives
                 if any(documents[url]["accessible"] for url in alternatives):

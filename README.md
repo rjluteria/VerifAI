@@ -107,3 +107,5 @@ Claim extraction rejects reconstructed or otherwise inexact quotations. Invalid 
 A closed, internally consistent count partition compares adult or juvenile counts with the matching subgroup, never the total. It requires the same stated subject and noun and a complete two-group source sentence. Qualifiers, conflicting totals, different entities and additional source findings stay in model review. The copied source sentence remains available as the numerical evidence.
 
 Four separate [measurement-conflict controls](evaluations/measurement-conflicts.json) preserve unresolved-conflict, correction, shared-contradiction and unit-conversion boundaries. They supplement the frozen regression corpus; all four passed in the current focused evaluation, with manually checked final proof contexts. Individual reviewers can still err; these controls do not establish universal accuracy.
+
+Progress reports actual independent source URL checks as they are acquired, including unavailable checks. A repeated URL across claims counts once per job. These counts describe selected URL checks, not distinct original sources or independent corroboration.

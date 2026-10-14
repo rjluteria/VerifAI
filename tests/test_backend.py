@@ -46,6 +46,81 @@ class Reviewers:
 
 
 class EngineTests(unittest.TestCase):
+    def test_independent_progress_reports_real_access_before_review(self):
+        events = []
+        calls = []
+
+        class ObservedReviewers(Reviewers):
+            def judge(inner, name, claim, evidence):
+                counts = [
+                    item["tracks"]["independent"]
+                    for item in events
+                    if isinstance(item, dict)
+                    and "independent" in item.get("tracks", {})
+                ][-1]
+                self.assertEqual(counts, {"total": 2, "completed": 2, "accessible": 1})
+                return super().judge(name, claim, evidence)
+
+        def fetch(url):
+            calls.append(url)
+            if url.endswith("missing"):
+                raise OSError("unavailable")
+            return {
+                "url": url,
+                "text": "The module weighs 8 kilograms.",
+                "accessible": True,
+                "checked_at": 123,
+                "sha256": "abc",
+            }
+
+        result = Engine(
+            ObservedReviewers(),
+            fetch,
+            lambda text: ["https://example.org/fact", "https://example.org/missing"],
+        ).verify("The module weighs 8 kilograms.", [], events.append)
+        counts = [
+            item["tracks"]["independent"]
+            for item in events
+            if isinstance(item, dict) and "independent" in item.get("tracks", {})
+        ]
+        self.assertEqual(counts[0], {"total": 2, "completed": 0, "accessible": 0})
+        self.assertEqual(counts[-1], {"total": 2, "completed": 2, "accessible": 1})
+        self.assertEqual(
+            set(calls), {"https://example.org/fact", "https://example.org/missing"}
+        )
+        self.assertEqual(result["claims"][0]["label"], "SUPPORTED")
+
+    def test_independent_progress_does_not_double_count_reused_urls_across_claims(self):
+        events, calls = [], []
+
+        class TwoClaims(Reviewers):
+            def extract(self, text):
+                return (
+                    [{"text": text, "quote": text}, {"text": text, "quote": text}],
+                    [],
+                )
+
+        def fetch(url):
+            calls.append(url)
+            return {
+                "url": url,
+                "text": "The module weighs 8 kilograms.",
+                "accessible": True,
+                "checked_at": 123,
+                "sha256": "abc",
+            }
+
+        Engine(TwoClaims(), fetch, lambda text: ["https://example.org/fact"]).verify(
+            "The module weighs 8 kilograms.", [], events.append
+        )
+        counts = [
+            item["tracks"]["independent"]
+            for item in events
+            if isinstance(item, dict) and "independent" in item.get("tracks", {})
+        ]
+        self.assertEqual(counts[-1], {"total": 1, "completed": 1, "accessible": 1})
+        self.assertEqual(calls, ["https://example.org/fact"])
+
     def test_fragment_aliases_reuse_transport_across_discovery_and_keep_both_tracks(
         self,
     ):
