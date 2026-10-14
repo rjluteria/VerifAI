@@ -342,7 +342,7 @@ test("owned job trace is collapsed and appears only in the developer build", asy
     const node = f.dom.window.document.querySelector("#benchmark-causal-trace");
     if (benchmarkTiming) {
       assert.equal(node.closest("details").open, false);
-      assert.deepEqual(JSON.parse(node.textContent), f.data.first.trace);
+      assert.deepEqual(JSON.parse(node.value), f.data.first.trace);
       assert.match(
         f.dom.window.document.querySelector("#benchmark-job").textContent,
         /owned-synthetic-job/,
