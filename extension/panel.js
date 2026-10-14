@@ -194,8 +194,12 @@ async function render() {
   if (BENCHMARK_TIMING && data?.trace?.version === 1) {
     const diagnostics = element("details", "", root);
     element("summary", "Sanitized backend timing", diagnostics);
-    element("pre", JSON.stringify(data.trace), diagnostics).id =
-      "benchmark-causal-trace";
+    const timingField = element("textarea", "", diagnostics);
+    timingField.id = "benchmark-causal-trace";
+    timingField.setAttribute("aria-label", "Sanitized backend timing record");
+    timingField.readOnly = true;
+    timingField.rows = 5;
+    timingField.value = JSON.stringify(data.trace);
   }
   if (!data?.result) return;
   const result = data.result;

@@ -551,3 +551,30 @@ test("cache restoration diagnostic uses its new paint instead of the old fresh p
   assert.equal(record.clock_valid, true);
   assert.equal(f.messages.length, 0);
 });
+
+test("full causal timing is inspectable only in the explicitly enabled developer build", async () => {
+  for (const enabled of [false, true]) {
+    const f = await setup({ benchmarkTiming: enabled });
+    f.data.first.trace = {
+      version: 1,
+      clock: "backend-perf-counter",
+      elapsed_ms: 1234,
+      events: Array.from({ length: 30 }, (_, id) => ({
+        id,
+        stage: "model_transport",
+        start_ms: id,
+        end_ms: id + 1,
+      })),
+    };
+    await f.listeners[0]();
+    const field = f.dom.window.document.querySelector(
+      "#benchmark-causal-trace",
+    );
+    if (enabled) {
+      assert.equal(field.readOnly, true);
+      assert.deepEqual(JSON.parse(field.value), f.data.first.trace);
+      assert.ok(field.value.length > 512);
+    } else assert.equal(field, null);
+    assert.equal(f.messages.length, 0);
+  }
+});
