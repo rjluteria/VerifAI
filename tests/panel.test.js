@@ -4,9 +4,13 @@ import fs from "node:fs";
 import vm from "node:vm";
 import { JSDOM } from "jsdom";
 
-async function setup({ benchmarkTiming = false, clock = Date } = {}) {
+async function setup({
+  benchmarkTiming = false,
+  clock = Date,
+  panelContext = { eligible: true, on: true },
+} = {}) {
   const dom = new JSDOM(
-    '<p id="stage"></p><button id="reverify"></button><main id="results"></main>',
+    '<p id="stage"></p><section id="progress"></section><p id="elapsed"></p><button id="reverify"></button><main id="results"></main>',
     { pretendToBeVisual: true },
   );
   const opened = [],
@@ -68,8 +72,9 @@ async function setup({ benchmarkTiming = false, clock = Date } = {}) {
     },
     runtime: {
       async sendMessage(value) {
-        messages.push(structuredClone(value));
-        return { ok: true };
+        if (value.type !== "panel-context")
+          messages.push(structuredClone(value));
+        return value.type === "panel-context" ? panelContext : { ok: true };
       },
     },
   };
@@ -88,7 +93,7 @@ async function setup({ benchmarkTiming = false, clock = Date } = {}) {
     },
   );
   await new Promise((resolve) => setImmediate(resolve));
-  return { dom, opened, messages, data, listeners, frames };
+  return { dom, opened, messages, data, listeners, frames, panelContext };
 }
 test("source and redirect links create distinct Chrome tabs with exact intended URLs", async () => {
   const f = await setup();
@@ -336,4 +341,95 @@ test("private evidence inspection contains only the rendered factual result", as
     } else assert.equal(field, null);
     f.dom.window.close();
   }
+});
+
+test("overrun stays pending with real elapsed time and no invented verdict", async () => {
+  class FixedClock extends Date {
+    static now() {
+      return 40000;
+    }
+  }
+  const f = await setup({ clock: FixedClock });
+  f.data.first = {
+    text: "Pending fact.",
+    job: "job-one",
+    triggeredAt: 1000,
+    stage: "Searching independent sources",
+    progress: {
+      version: 1,
+      job_id: "job-one",
+      sequence: 2,
+      claim_count: 3,
+      stages: {
+        claims: "complete",
+        citations: "active",
+        independent: "active",
+        evaluation: "pending",
+      },
+    },
+  };
+  await f.listeners[0]();
+  assert.match(
+    f.dom.window.document.querySelector("#stage").textContent,
+    /taking longer than expected/,
+  );
+  assert.match(
+    f.dom.window.document.querySelector("#elapsed").textContent,
+    /39.0 s/,
+  );
+  assert.match(
+    f.dom.window.document.querySelector("#progress").textContent,
+    /Checking 3 claims/,
+  );
+  assert.match(
+    f.dom.window.document.querySelector("#progress").textContent,
+    /ChatGPT citations: active/,
+  );
+  assert.equal(f.dom.window.document.querySelector("article"), null);
+  assert.equal(f.dom.window.document.querySelector("#reverify").disabled, true);
+});
+
+test("another job's progress is hidden and completion waits for final paint", async () => {
+  const f = await setup();
+  f.data.first.job = "own";
+  f.data.first.progress = { version: 1, job_id: "other", claim_count: 22 };
+  await f.listeners[0]();
+  assert.equal(
+    f.dom.window.document.querySelector("#progress").textContent,
+    "",
+  );
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Preparing complete results…",
+  );
+  while (f.frames.length) f.frames.shift()();
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Check complete",
+  );
+  assert.match(
+    f.dom.window.document.querySelector("#results").textContent,
+    /SUPPORTED: 1/,
+  );
+});
+
+test("Off and another owning tab hide evidence and invalidate scheduled paints", async () => {
+  const f = await setup();
+  assert.ok(f.dom.window.document.querySelector("article"));
+  f.panelContext.eligible = false;
+  f.panelContext.on = false;
+  await f.listeners[0]();
+  while (f.frames.length) f.frames.shift()();
+  assert.equal(f.dom.window.document.querySelector("article"), null);
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Verification is Off.",
+  );
+  assert.equal(f.dom.window.document.querySelector("#reverify").disabled, true);
+  f.panelContext.on = true;
+  await f.listeners[0]();
+  assert.match(
+    f.dom.window.document.querySelector("#stage").textContent,
+    /owning response/,
+  );
 });

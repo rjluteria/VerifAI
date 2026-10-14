@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 from .engine import Engine
 from .model import Models
+from .progress import JobProgress
 from .runtime import process_metrics
 from .sources import discovery, document, encyclopedia
 from .trace import Trace, measured, trace_scope
@@ -149,10 +150,12 @@ class Service:
         if not self.running.acquire(blocking=False):
             return None
         key = secrets.token_urlsafe(24)
+        status = JobProgress(key, payload.get("response_id"))
         with self.lock:
             self.jobs[key] = {
                 "owner": owner,
                 "stage": "Analyzing claims",
+                "progress": status.snapshot(),
                 "expires": time.time() + 1800,
             }
 
@@ -160,7 +163,10 @@ class Service:
             def progress(stage):
                 with self.lock:
                     if key in self.jobs:
-                        self.jobs[key]["stage"] = stage
+                        status.update(stage)
+                        self.jobs[key]["progress"] = status.snapshot()
+                        if isinstance(stage, str):
+                            self.jobs[key]["stage"] = stage
 
             tracer = Trace(key) if self.causal_diagnostics else None
             try:
@@ -170,6 +176,8 @@ class Service:
                     )
                 with self.lock:
                     if key in self.jobs:
+                        status.update("Complete")
+                        self.jobs[key]["progress"] = status.snapshot()
                         self.jobs[key].update(stage="Complete", result=result)
                         if tracer:
                             self.jobs[key]["trace"] = tracer.snapshot()
@@ -177,6 +185,8 @@ class Service:
             except Exception:
                 with self.lock:
                     if key in self.jobs:
+                        status.update("Failed")
+                        self.jobs[key]["progress"] = status.snapshot()
                         self.jobs[key].update(
                             stage="Failed",
                             error="Verification unavailable; retry later.",
@@ -194,7 +204,20 @@ class Service:
 def valid_request(data):
     if (
         not isinstance(data, dict)
-        or set(data) != {"text", "citations"}
+        or set(data)
+        not in ({"text", "citations"}, {"text", "citations", "response_id"})
+        or (
+            "response_id" in data
+            and (
+                not isinstance(data["response_id"], str)
+                or not 1 <= len(data["response_id"]) <= 80
+                or any(
+                    c
+                    not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_"
+                    for c in data["response_id"]
+                )
+            )
+        )
         or not isinstance(data["text"], str)
         or not 0 < len(data["text"]) <= 60000
         or not isinstance(data["citations"], list)
@@ -292,6 +315,7 @@ def handler(service):
                         "token": service.token(origin, owner),
                         "expires_in": 900,
                         "completion_wait": 5,
+                        "progress_version": 1,
                     },
                 )
             try:

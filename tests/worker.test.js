@@ -563,7 +563,10 @@ test("foreground polling is throttled and delivers honest stage updates", async 
   await f.send({ type: "state", poll: true });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.calls.filter((v) => v === "fetch").length, 1);
-  assert.equal(f.deliveries[0][1].summary, "Searching independent sources");
+  assert.equal(
+    f.deliveries[0][1].summary,
+    "Verifying… · Searching independent sources",
+  );
   await f.send({ type: "state", poll: true });
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(f.calls.filter((v) => v === "fetch").length, 1);
@@ -1050,4 +1053,80 @@ test("malformed completed job data publishes a current-run error rather than lea
   assert.equal(updates.length, 1);
   assert.equal(updates[0].runId, "owned-run");
   assert.match(updates[0].summary, /Invalid verification data; use Re-verify/);
+});
+
+test("progress capability binds an opaque run identity without sending page identity or clocks", async () => {
+  let payload;
+  const f = await setup({
+    session: { on: true },
+    fetcher: async (url, options) => {
+      if (url.endsWith("/v1/verify")) payload = JSON.parse(options.body);
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/v1/session")
+            ? { token: "token", expires_in: 900, progress_version: 1 }
+            : { job: "job" },
+      };
+    },
+  });
+  await f.send({
+    type: "verify",
+    id: "message",
+    revision: "a".repeat(64),
+    url: "https://chatgpt.com/c/test",
+    text: "A fact.",
+    citations: [],
+    triggeredAt: Date.now() - 100,
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  const record = f.chrome.storage.session.data["response:1:message"];
+  assert.equal(payload.response_id, record.runId);
+  assert.deepEqual(Object.keys(payload).sort(), [
+    "citations",
+    "response_id",
+    "text",
+  ]);
+  assert.equal(record.cachedResult, false);
+  assert.ok(record.triggeredAt <= Date.now() - 100);
+});
+
+test("panel context is owner-bound and rejects a content-page sender", async () => {
+  const tab = { id: 1, url: "https://chatgpt.com/c/test" };
+  const key = "response:1:message";
+  const f = await setup({
+    tab,
+    session: {
+      on: true,
+      selected: key,
+      [key]: {
+        id: "message",
+        revision: "a".repeat(64),
+        tab: 1,
+        url: tab.url,
+      },
+    },
+  });
+  assert.equal((await f.send({ type: "panel-context" })).eligible, false);
+  const panelSender = { url: "chrome-extension://test/panel.html" };
+  assert.equal(
+    (await f.send({ type: "panel-context" }, panelSender)).eligible,
+    true,
+  );
+  tab.url = "https://chatgpt.com/c/another";
+  assert.equal(
+    (await f.send({ type: "panel-context" }, panelSender)).eligible,
+    false,
+  );
+  tab.url = "https://chatgpt.com/c/test";
+  f.chrome.storage.session.data.on = false;
+  assert.deepEqual(
+    JSON.parse(
+      JSON.stringify(await f.send({ type: "panel-context" }, panelSender)),
+    ),
+    {
+      eligible: false,
+      on: false,
+    },
+  );
 });

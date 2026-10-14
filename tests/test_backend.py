@@ -1605,9 +1605,11 @@ class HTTPTests(unittest.TestCase):
         release.set()
         waiting.join(timeout=2)
         self.assertFalse(waiting.is_alive())
-        self.assertEqual(
-            result[0], (200, {"stage": "Complete", "result": {"claims": []}})
-        )
+        self.assertEqual(result[0][0], 200)
+        self.assertEqual(result[0][1]["stage"], "Complete")
+        self.assertEqual(result[0][1]["result"], {"claims": []})
+        self.assertEqual(result[0][1]["progress"]["job_id"], key)
+        self.assertEqual(result[0][1]["progress"]["outcome"], "complete")
         self.assertEqual(
             self.request("/v1/jobs/" + key + "?wait=999", token=token)[0], 400
         )

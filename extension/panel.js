@@ -24,8 +24,48 @@ function link(url, parent) {
   } catch {}
 }
 let last = "";
+let renderGeneration = 0;
 const benchmarkRenders = new Map();
+let timerData;
+const stageLabels = {
+  claims: "Identifying factual claims",
+  citations: "Checking ChatGPT citations",
+  independent: "Finding independent evidence",
+  evaluation: "Evaluating evidence and preparing verdicts",
+};
+function setStatus(text) {
+  const target = document.querySelector("#stage");
+  if (target.textContent !== text) target.textContent = text;
+}
+function updateElapsed() {
+  const target = document.querySelector("#elapsed");
+  if (!target) return;
+  const started = timerData?.triggeredAt;
+  if (timerData?.cachedResult) {
+    target.textContent =
+      "Cached result restored · Original source retrieval times retained";
+    return;
+  }
+  if (!Number.isFinite(started)) {
+    target.textContent = "";
+    return;
+  }
+  const elapsed = Math.max(0, (timerData.renderedAt || Date.now()) - started);
+  target.textContent = `Elapsed ${(elapsed / 1000).toFixed(1)} s · Warm fresh target 30 s`;
+  if (
+    !timerData.result &&
+    timerData.stage !== "Failed" &&
+    !["paused", "failed"].includes(timerData.executionState) &&
+    elapsed > 30000
+  )
+    setStatus(
+      timerData.executionState === "retrying"
+        ? "Verification is taking longer than expected. Recovering connection…"
+        : "Verification is taking longer than expected. Continuing…",
+    );
+}
 async function render() {
+  const generation = ++renderGeneration;
   const { selected, storageNotice } = await chrome.storage.session.get([
     "selected",
     "storageNotice",
@@ -33,17 +73,113 @@ async function render() {
   const data = selected
     ? (await chrome.storage.session.get(selected))[selected]
     : undefined;
+  if (data) {
+    const context = await chrome.runtime
+      .sendMessage({ type: "panel-context" })
+      .catch(() => ({}));
+    if (generation !== renderGeneration) return;
+    if (context.eligible !== true) {
+      last = "";
+      timerData = undefined;
+      document.querySelector("#results").replaceChildren();
+      document.querySelector("#progress")?.replaceChildren();
+      document.querySelector("#reverify").disabled = true;
+      setStatus(
+        context.on === false
+          ? "Verification is Off."
+          : "Return to the owning response to view these results.",
+      );
+      updateElapsed();
+      return;
+    }
+  }
+  const paintKey = data?.runId ? "paint:" + data.runId : undefined;
+  const savedPaint = paintKey
+    ? (await chrome.storage.session.get(paintKey))[paintKey]
+    : undefined;
+  if (generation !== renderGeneration) return;
   const fingerprint = JSON.stringify([selected, data, storageNotice]);
   if (fingerprint === last) return;
   last = fingerprint;
+  timerData = data
+    ? {
+        ...data,
+        renderedAt: Number.isFinite(savedPaint) ? savedPaint : undefined,
+      }
+    : undefined;
   const analysisIncomplete =
     data?.result &&
     (data.result.unsupported.length ||
       data.result.claims.some((claim) => claim.errors.length));
-  document.querySelector("#stage").textContent = analysisIncomplete
-    ? "Analysis incomplete; some checks could not finish."
-    : data?.stage || "Select View details beside a response.";
-  document.querySelector("#reverify").disabled = !data?.text;
+  const overrun =
+    data &&
+    !data.result &&
+    Number.isFinite(data.triggeredAt) &&
+    Date.now() - data.triggeredAt > 30000;
+  setStatus(
+    analysisIncomplete
+      ? "Analysis incomplete; some checks could not finish."
+      : data?.result
+        ? "Preparing complete results…"
+        : data?.stage === "Failed" || data?.executionState === "failed"
+          ? "Verification failed. Retry when available."
+          : data?.executionState === "paused"
+            ? data.stage
+            : data?.executionState === "retrying"
+              ? overrun
+                ? "Verification is taking longer than expected. Recovering connection…"
+                : "Connection unavailable. Automatic recovery is pending."
+              : data
+                ? overrun
+                  ? "Verification is taking longer than expected. Continuing…"
+                  : "Verifying…"
+                : "Select View details beside a response.",
+  );
+  const progressRoot = document.querySelector("#progress");
+  if (progressRoot) {
+    progressRoot.replaceChildren();
+    if (data?.progress?.version === 1 && data.progress.job_id === data.job) {
+      if (Number.isInteger(data.progress.claim_count))
+        element(
+          "p",
+          `Checking ${data.progress.claim_count} claims`,
+          progressRoot,
+        );
+      for (const [key, label] of Object.entries(stageLabels)) {
+        const state = data.progress.stages?.[key];
+        if (
+          ["pending", "active", "complete", "failed", "unavailable"].includes(
+            state,
+          )
+        )
+          element("p", `${label}: ${state}`, progressRoot);
+      }
+      for (const track of ["citation", "independent"]) {
+        const counts = data.progress.tracks?.[track];
+        if (
+          counts &&
+          [counts.completed, counts.total, counts.accessible].every(
+            Number.isInteger,
+          ) &&
+          0 <= counts.accessible &&
+          counts.accessible <= counts.completed &&
+          counts.completed <= counts.total &&
+          counts.total <= 1000
+        )
+          element(
+            "p",
+            `${track === "citation" ? "Citation" : "Independent"} sources: ${counts.completed}/${counts.total} checks; ${counts.accessible} retrieved`,
+            progressRoot,
+          );
+      }
+    }
+  }
+  updateElapsed();
+  document.querySelector("#reverify").disabled =
+    !data?.text ||
+    (!data.result &&
+      data.stage !== "Failed" &&
+      data.executionState !== "failed");
   const root = document.querySelector("#results");
   root.replaceChildren();
   if (storageNotice) element("p", storageNotice, root);
@@ -146,6 +282,15 @@ async function render() {
             "Calculation from the claim’s stated operands.",
             section,
           );
+        if (
+          source.derivation?.method ===
+          "exact arithmetic from reviewer-validated unit definition"
+        )
+          element(
+            "p",
+            `Exact calculation from the quoted unit definition: ${source.derivation.calculated_IU_fraction} IU; claim asserts ${source.derivation.asserted_IU_fraction} IU. Reviewers assessed the definition; the converted comparison is calculated.`,
+            section,
+          );
         if (source.final_url && source.final_url !== source.url) {
           element("p", "Redirect destination:", section);
           link(source.final_url, section);
@@ -160,6 +305,30 @@ async function render() {
       link(citation.url, p);
     }
   element("p", result.notice, root).className = "muted";
+  const counts = {};
+  for (const claim of result.claims)
+    counts[claim.label] = (counts[claim.label] || 0) + 1;
+  element(
+    "p",
+    ["SUPPORTED", "PARTIALLY_SUPPORTED", "CONTRADICTED", "UNVERIFIED"]
+      .map((label) => `${label.replaceAll("_", " ")}: ${counts[label] || 0}`)
+      .join(" · "),
+    root,
+  );
+  const completedCheckpoint = last;
+  const finalPaint = () => {
+    if (last !== completedCheckpoint || document.visibilityState !== "visible")
+      return;
+    timerData.renderedAt ||= Date.now();
+    if (paintKey && chrome.storage.session.set && !Number.isFinite(savedPaint))
+      chrome.storage.session
+        .set({ [paintKey]: timerData.renderedAt })
+        .catch(() => {});
+    if (!analysisIncomplete) setStatus("Check complete");
+    updateElapsed();
+  };
+  if (!BENCHMARK_TIMING)
+    requestAnimationFrame(() => requestAnimationFrame(finalPaint));
   if (
     BENCHMARK_TIMING &&
     Number.isFinite(data.benchmarkStartedAt) &&
@@ -171,6 +340,7 @@ async function render() {
       requestAnimationFrame(() => {
         if (last !== checkpoint || document.visibilityState !== "visible")
           return;
+        finalPaint();
         if (!benchmarkRenders.has(data.benchmarkRun)) {
           benchmarkRenders.set(data.benchmarkRun, {
             startedAt: data.benchmarkStartedAt,
@@ -235,4 +405,5 @@ document.querySelector("#reverify").addEventListener("click", async () => {
   if (result.error) document.querySelector("#stage").textContent = result.error;
 });
 chrome.storage.onChanged.addListener(render);
+if (typeof setInterval === "function") setInterval(updateElapsed, 1000);
 render();

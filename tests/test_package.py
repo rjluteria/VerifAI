@@ -8,6 +8,28 @@ from zipfile import ZipFile
 
 
 class PackageTests(unittest.TestCase):
+    def test_build_is_reproducible_with_fixed_safe_metadata(self):
+        root = Path(__file__).resolve().parents[1]
+        with tempfile.TemporaryDirectory() as folder:
+            paths = [Path(folder) / name for name in ("one.zip", "two.zip")]
+            for path in paths:
+                subprocess.run(
+                    [
+                        sys.executable,
+                        str(root / "scripts/package.py"),
+                        "--output",
+                        str(path),
+                    ],
+                    check=True,
+                    capture_output=True,
+                )
+            self.assertEqual(paths[0].read_bytes(), paths[1].read_bytes())
+            with ZipFile(paths[0]) as archive:
+                self.assertEqual(len(archive.namelist()), 12)
+                for entry in archive.infolist():
+                    self.assertEqual(entry.date_time, (1980, 1, 1, 0, 0, 0))
+                    self.assertEqual(entry.external_attr >> 16, 0o100644)
+
     def test_developer_override_is_packaged_with_exact_permission(self):
         root = Path(__file__).resolve().parents[1]
         original = (root / "extension/config.js").read_bytes()

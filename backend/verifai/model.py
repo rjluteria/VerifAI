@@ -11,6 +11,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
 from email.utils import parsedate_to_datetime
 
+from .quote_units import exact_units
 from .trace import measured
 
 _REQUEST_LOCK = threading.Lock()
@@ -335,7 +336,11 @@ class Models:
         for block in evidence.split("\n\n"):
             # Candidates retain complete sentences and exact source punctuation.
             units.extend(
-                v.strip() for v in re.split(r"(?<=[.!?])(?=\s)", block) if v.strip()
+                exact_units(block)
+                if os.getenv("PRECISE_QUOTE_UNITS", "0") == "1"
+                else [
+                    v.strip() for v in re.split(r"(?<=[.!?])(?=\s)", block) if v.strip()
+                ]
             )
         unit_spans, cursor = [], 0
         for value in units:
@@ -593,7 +598,29 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
             return vectors
 
         try:
-            vectors = embeddings([p["text"] for p in candidates], "passage")
+            passage_cache = (
+                query_cache
+                if query_cache is not None
+                and os.getenv("JOB_PASSAGE_CACHE", "0") == "1"
+                else None
+            )
+            texts = [p["text"] for p in candidates]
+            if passage_cache is None:
+                vectors = embeddings(texts, "passage")
+            else:
+                missing = list(
+                    dict.fromkeys(
+                        t for t in texts if ("passage", t) not in passage_cache
+                    )
+                )
+                fresh = (
+                    dict(zip(missing, embeddings(missing, "passage")))
+                    if missing
+                    else {}
+                )
+                vectors = [
+                    passage_cache.get(("passage", t), fresh.get(t)) for t in texts
+                ]
             query = query_cache.get(claim) if query_cache is not None else None
             if query is None:
                 query = embeddings([claim], "query")[0]
@@ -611,6 +638,10 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
             ranked = sorted(
                 zip(candidates, vectors), key=lambda pair: score(pair[1]), reverse=True
             )
+            if passage_cache is not None:
+                # Admit only vectors which survived this query's dimension checks.
+                for text, vector in fresh.items():
+                    passage_cache[("passage", text)] = vector
             return sorted([p for p, _ in ranked[:6]], key=lambda p: p["start"])
         except (
             OSError,

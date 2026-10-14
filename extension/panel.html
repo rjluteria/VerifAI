@@ -4,7 +4,11 @@
   ><link rel="stylesheet" href="style.css" />
   <body>
     <h1>VerifAI</h1>
-    <p id="stage">Select View details beside a response.</p>
+    <p id="stage" role="status" aria-live="polite">
+      Select View details beside a response.
+    </p>
+    <section id="progress" aria-label="Verification progress"></section>
+    <p id="elapsed"></p>
     <button id="reverify" disabled>Re-verify</button>
     <div id="results"></div>
     <script type="module" src="panel.js"></script>

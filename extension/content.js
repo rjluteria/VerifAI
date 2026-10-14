@@ -420,6 +420,7 @@
         const id = new URL(pageUrl).pathname + ":" + messageId;
         const response = await chrome.runtime.sendMessage({
           type: "verify",
+          triggeredAt: Date.now(),
           url: pageUrl,
           id,
           revision,
@@ -437,7 +438,7 @@
             root,
             id,
             revision,
-            response.summary || "Analyzing claims",
+            response.summary || "Verifying…",
             response.runId,
             response.runSequence,
           );

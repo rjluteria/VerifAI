@@ -9,6 +9,8 @@ from urllib.parse import urlsplit
 
 from .model import decomposition_scope, review_pair
 from .trace import measured
+from .unit_aliases import conflicting_mass_aliases, is_mass_conversion
+from .unit_math import plan_conversion
 
 # Final reasons describe the validated category only. Free-form reviewer prose
 # can introduce measurements or facts absent from the admitted quotations.
@@ -308,7 +310,7 @@ def bounded_abstention(claim, evidence):
 
 
 @decomposition_scope()
-def classify(models, claim, evidence):
+def classify(models, claim, evidence, _unit_math=True):
     deterministic = (
         bounded_abstention(claim, evidence)
         or partition_count(claim, evidence)
@@ -322,6 +324,31 @@ def classify(models, claim, evidence):
             "reason": "No reviewable evidence was selected for this check.",
             "quotes": [],
         }
+    if _unit_math and os.getenv("GROUNDED_UNIT_ARITHMETIC", "0") == "1":
+        plan = plan_conversion(claim, evidence)
+        if plan:
+            reference = classify(
+                models, plan.reference_claim, evidence, _unit_math=False
+            )
+            reviews = reference.get("reviews", [])
+            if (
+                reference["label"] == "SUPPORTED"
+                and not reference.get("failures")
+                and len(reviews) == 2
+                and len({row["model"] for row in reviews}) == 2
+                and any(plan.definition in quote for quote in reference["quotes"])
+                and not any(
+                    conflicting_mass_aliases(quote) for quote in reference["quotes"]
+                )
+            ):
+                label = plan.label()
+                return {
+                    **reference,
+                    "label": label,
+                    "reason": EVIDENCE_REASONS[label],
+                    "derivation": plan.metadata(),
+                    "review_scope": "quoted unit definition; complete claim derived by exact arithmetic",
+                }
     assessments, failures = review_pair(models, claim, evidence)
     initial_reviews = []
     reconsidered = False
@@ -540,6 +567,7 @@ class Engine:
                 "Claims beyond the first 60 were not verified in this request."
             )
             claims = claims[:60]
+        progress({"claim_count": len(claims)})
         documents = {}
         source_ids = {}
         transport_origins = {}
@@ -619,6 +647,7 @@ class Engine:
         progress("Checking citations")
         first_discovery = None
         if claims and citations and os.getenv("PARALLEL_RETRIEVAL", "0") == "1":
+            progress("Searching independent sources")
             # Only independent discovery overlaps citation transport. Join before
             # reviewing; the document cache has one transport owner throughout.
             with ThreadPoolExecutor(max_workers=2) as pool:
@@ -629,6 +658,20 @@ class Engine:
                 first_discovery = searching.result()
         else:
             prefetch(citations)
+        progress({"stages": {"citations": "complete" if citations else "unavailable"}})
+        progress(
+            {
+                "tracks": {
+                    "citation": {
+                        "total": len(citations),
+                        "completed": len(citations),
+                        "accessible": sum(
+                            documents[url]["accessible"] for url in citations
+                        ),
+                    }
+                }
+            }
+        )
         output = []
         checked = 0
         check_budget = min(120, max(1, int(os.getenv("MAX_SOURCE_CHECKS", "60"))))
@@ -751,6 +794,22 @@ class Engine:
                                 ],
                             }
                             snippets = []
+                        if (
+                            os.getenv("REJECT_MASS_ALIASES", "0") == "1"
+                            and verdict["label"] != "UNVERIFIED"
+                            and is_mass_conversion(claim)
+                            and any(
+                                conflicting_mass_aliases(s["text"]) for s in snippets
+                            )
+                        ):
+                            verdict = {
+                                **verdict,
+                                "label": "UNVERIFIED",
+                                "reason": "Selected evidence contains inconsistent mass-unit aliases.",
+                                "quotes": [],
+                            }
+                            verdict.pop("quote_spans", None)
+                            snippets = []
                         reviewed_content[doc["text"]] = (verdict, snippets, selected)
                     result = {
                         "url": url,
@@ -802,11 +861,19 @@ class Engine:
                         ],
                         "sha256": doc["sha256"],
                         "retrieved_at": doc["checked_at"],
-                        "publication_time": None,
-                        "context_scope": "exact selected source spans; unknown publication time",
+                        "publication_time": doc.get("publication_time"),
+                        "publication_status": doc.get(
+                            "publication_status", "not established"
+                        ),
+                        "context_scope": "exact selected source spans; source-declared publication time"
+                        if doc.get("publication_time")
+                        else "exact selected source spans; unknown publication time",
                     }
                     if verdict.get("review_reconsidered"):
                         result["review_reconsidered"] = True
+                    if verdict.get("derivation"):
+                        result["derivation"] = verdict["derivation"]
+                        result["review_scope"] = verdict["review_scope"]
                     if verdict.get("reviews"):
                         result["review_models"] = [
                             r["model"] for r in verdict["reviews"]
@@ -827,6 +894,14 @@ class Engine:
                     "errors": errors,
                 }
             )
+        progress(
+            {
+                "stages": {
+                    "independent": "complete" if claims else "unavailable",
+                    "evaluation": "complete" if claims else "unavailable",
+                }
+            }
+        )
         progress("Finalizing results")
         return {
             "claims": output,

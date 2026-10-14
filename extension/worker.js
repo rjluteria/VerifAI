@@ -124,6 +124,7 @@ async function api(path, options = {}, submission) {
       token: data.token,
       expires: Date.now() + data.expires_in * 1000 - 30000,
       completionWait: data.completion_wait === 5,
+      progressVersion: data.progress_version === 1,
       origin,
     };
     await chrome.storage.session.set({ auth });
@@ -146,6 +147,14 @@ async function api(path, options = {}, submission) {
     submission.benchmarkSubmissionAttempts =
       (submission.benchmarkSubmissionAttempts || 0) + 1;
   }
+  if (path === "/v1/verify" && auth.progressVersion && submission?.runId)
+    options = {
+      ...options,
+      body: JSON.stringify({
+        ...JSON.parse(options.body),
+        response_id: submission.runId,
+      }),
+    };
   const response = await fetch(origin + path, {
     ...options,
     headers: {
@@ -243,6 +252,7 @@ async function run(key, value) {
         ...value,
         job: created.job,
         stage: "Analyzing claims",
+        executionState: "running",
         result: undefined,
         attempts: value.attempts || 0,
       },
@@ -274,6 +284,7 @@ async function run(key, value) {
         stage,
         attempts,
         retry,
+        executionState: error.paused ? "paused" : retry ? "retrying" : "failed",
         next: Date.now() + 60000,
       },
       true,
@@ -309,6 +320,12 @@ async function poll() {
         );
         const current = (await chrome.storage.session.get(key))[key];
         if (current?.job !== value.job) continue;
+        if (current.result) continue;
+        if (
+          job.progress?.response_id &&
+          job.progress.response_id !== current.runId
+        )
+          job.progress = undefined;
         if (job.result && !validResult(job.result)) {
           await store(
             key,
@@ -326,12 +343,25 @@ async function poll() {
           );
           continue;
         }
+        // A delayed progress snapshot cannot roll the same job backward.
+        if (
+          current.progress?.job_id === value.job &&
+          (current.result ||
+            (job.progress?.job_id === value.job &&
+              job.progress.sequence < current.progress.sequence))
+        )
+          job.progress = current.progress;
         await store(key, { ...current, ...job }, true);
         if (job.result || job.stage) {
           await publish(
             key,
             current,
-            job.result ? summary(job.result) : job.stage,
+            job.result
+              ? (job.result.unsupported.length ||
+                job.result.claims.some((c) => c.errors.length)
+                  ? "Analysis incomplete · "
+                  : "Check complete · ") + summary(job.result)
+              : "Verifying… · " + job.stage,
           );
         }
       } catch (error) {
@@ -411,6 +441,7 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         const runId = old.runId || crypto.randomUUID();
         await store(key, {
           ...old,
+          cachedResult: Boolean(old.result),
           runId,
           runSequence: old.runSequence || 0,
           ...(BENCHMARK_TIMING && old.result
@@ -435,6 +466,14 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       }
       const value = {
         id: message.id,
+        cachedResult: false,
+        executionState: "queued",
+        triggeredAt:
+          Number.isFinite(message.triggeredAt) &&
+          message.triggeredAt > 0 &&
+          message.triggeredAt <= Date.now()
+            ? message.triggeredAt
+            : Date.now(),
         revision: message.revision,
         runId: crypto.randomUUID(),
         runSequence: 0,
@@ -466,6 +505,21 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         selected: "response:" + sender.tab.id + ":" + message.id,
       });
       return { ok: true };
+    }
+    if (message.type === "panel-context") {
+      if (sender.url !== chrome.runtime.getURL("panel.html"))
+        return { eligible: false };
+      const { selected, on } = await chrome.storage.session.get([
+        "selected",
+        "on",
+      ]);
+      const value = selected
+        ? (await chrome.storage.session.get(selected))[selected]
+        : undefined;
+      return {
+        eligible: Boolean(value) && (await submissionActive(value)),
+        on: Boolean(on),
+      };
     }
     if (
       !["popup.html", "settings.html", "panel.html"].some(
@@ -523,6 +577,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         };
       const value = {
         ...old,
+        cachedResult: false,
+        executionState: "queued",
+        triggeredAt: Date.now(),
+        progress: undefined,
         runId: crypto.randomUUID(),
         runSequence:
           (Number.isSafeInteger(old.runSequence) && old.runSequence >= 0

@@ -12,6 +12,7 @@ from html.parser import HTMLParser
 from urllib.parse import urlencode, urlsplit, urlunsplit
 
 from .network import FetchRejected, fetch
+from .precise_text import Text as PreciseText
 
 _SEARCH_SLOTS = threading.BoundedSemaphore(2)
 
@@ -81,12 +82,18 @@ def document(url):
     result = fetch(url, redirect_check=allowed)
     raw = result["body"].decode("utf-8", errors="replace")
     if result["content_type"] == "text/html":
-        parser = Text()
+        parser = (
+            PreciseText() if os.getenv("PRECISE_SOURCE_BLOCKS", "0") == "1" else Text()
+        )
         parser.feed(raw)
-        text = "\n".join(
-            " ".join(line.split())
-            for line in "".join(parser.parts).splitlines()
-            if line.strip()
+        text = (
+            parser.rendered_text()
+            if isinstance(parser, PreciseText)
+            else "\n".join(
+                " ".join(line.split())
+                for line in "".join(parser.parts).splitlines()
+                if line.strip()
+            )
         )
     else:
         text = " ".join(raw.split())
@@ -109,6 +116,11 @@ def document(url):
         "accessible": True,
         "checked_at": int(time.time()),
         "sha256": hashlib.sha256(text.encode()).hexdigest(),
+        **(
+            parser.publication.result()
+            if result["content_type"] == "text/html" and isinstance(parser, PreciseText)
+            else {}
+        ),
     }
 
 

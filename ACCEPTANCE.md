@@ -1,6 +1,8 @@
 # Acceptance status
 
-VerifAI remains a private development candidate. Release acceptance fails the strict five-second fresh-verification target. Bounded regression scores are not universal factual-accuracy guarantees. Frozen inputs and gold labels are unchanged; failed experiments and interrupted runs remain in private evidence.
+VerifAI remains a private development candidate. On 14 October 2026 the user replaced the five-second release threshold with 30 seconds for all preregistered healthy, warm, fresh complete native renders. The new gate is NOT TESTED for this development revision; correctness/source qualification remains open. Cold and degraded cohorts are separately measured and disclosed, with honest pending/overrun/failure behavior. No deadline fabricates a verdict. Bounded regression scores are not universal factual-accuracy guarantees. Frozen inputs, gold and historical measurements are unchanged.
+
+The table below preserves prior-phase results; it does not qualify version 0.1.13 or the active 30-second contract. The latest retained 0.1.12 baseline has 19 warm jobs, 25/27 correct eligible atoms and no five-second successes, with median 158.048 seconds and maximum 541.438 seconds. See the private requirements-recovery report for all attempts. A new preregistered comparable cohort must qualify the active threshold.
 
 | Check | Evidence and limits |
 | --- | --- |

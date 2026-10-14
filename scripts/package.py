@@ -3,7 +3,7 @@ import json
 import re
 from pathlib import Path
 from urllib.parse import urlsplit
-from zipfile import ZIP_DEFLATED, ZipFile
+from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
 
 
 def service_origin(value):
@@ -79,9 +79,11 @@ def main():
     with ZipFile(output, "w", ZIP_DEFLATED) as archive:
         for path in sorted((root / "extension").iterdir()):
             if path.is_file():
-                archive.writestr(
-                    path.name, replacements.get(path.name, path.read_bytes())
-                )
+                entry = ZipInfo(path.name, date_time=(1980, 1, 1, 0, 0, 0))
+                entry.compress_type = ZIP_DEFLATED
+                entry.create_system = 3
+                entry.external_attr = 0o100644 << 16
+                archive.writestr(entry, replacements.get(path.name, path.read_bytes()))
     print("Extension package created.")
 
 
