@@ -497,3 +497,57 @@ test("periodic reconciliation recovers a missed storage notification", async () 
   assert.equal(f.dom.window.document.querySelector("article"), null);
   assert.equal(f.messages.length, 0);
 });
+
+test("fresh diagnostics retain the saved first paint after panel reopening", async () => {
+  class LaterClock extends Date {
+    static now() {
+      return 50000;
+    }
+  }
+  const f = await setup({ benchmarkTiming: true, clock: LaterClock });
+  Object.assign(f.data.first, {
+    runId: "run-one",
+    benchmarkRun: "fresh-one",
+    benchmarkStartedAt: 1000,
+    benchmarkClock: "wall-clock-v3",
+    benchmarkClockOrigin: "dispatcher",
+  });
+  f.data["paint:run-one"] = 2000;
+  await f.listeners[0]();
+  while (f.frames.length) f.frames.shift()();
+  const record = JSON.parse(
+    f.dom.window.document.querySelector("#benchmark-clock-record").value,
+  );
+  assert.equal(record.visible_final_epoch_ms, 2000);
+  assert.equal(record.elapsed_ms, 1000);
+  assert.equal(record.cached, false);
+  assert.equal(f.messages.length, 0);
+});
+
+test("cache restoration diagnostic uses its new paint instead of the old fresh paint", async () => {
+  class LaterClock extends Date {
+    static now() {
+      return 50000;
+    }
+  }
+  const f = await setup({ benchmarkTiming: true, clock: LaterClock });
+  Object.assign(f.data.first, {
+    runId: "run-one",
+    benchmarkRun: "cache-one",
+    benchmarkStartedAt: 40000,
+    benchmarkClock: "wall-clock-v3",
+    benchmarkClockOrigin: "dispatcher",
+    benchmarkRestored: true,
+  });
+  f.data["paint:run-one"] = 2000;
+  await f.listeners[0]();
+  while (f.frames.length) f.frames.shift()();
+  const record = JSON.parse(
+    f.dom.window.document.querySelector("#benchmark-clock-record").value,
+  );
+  assert.equal(record.visible_final_epoch_ms, 50000);
+  assert.equal(record.elapsed_ms, 10000);
+  assert.equal(record.cached, true);
+  assert.equal(record.clock_valid, true);
+  assert.equal(f.messages.length, 0);
+});

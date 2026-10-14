@@ -344,7 +344,11 @@ async function render() {
         if (!benchmarkRenders.has(data.benchmarkRun)) {
           benchmarkRenders.set(data.benchmarkRun, {
             startedAt: data.benchmarkStartedAt,
-            renderedAt: Date.now(),
+            // Reopening a fresh result retains its first complete paint.
+            // Cache restoration has a separate new dispatch clock.
+            renderedAt: data.benchmarkRestored
+              ? Date.now()
+              : timerData.renderedAt,
           });
           if (benchmarkRenders.size > 200)
             benchmarkRenders.delete(benchmarkRenders.keys().next().value);
