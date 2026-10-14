@@ -16,7 +16,10 @@ async function setup({
   const opened = [],
     messages = [],
     listeners = [],
-    frames = [];
+    frames = [],
+    tabChanges = [],
+    focusChanges = [],
+    timerTicks = [];
   const data = {
     selected: "first",
     first: {
@@ -66,8 +69,25 @@ async function setup({
       },
     },
     tabs: {
+      onActivated: {
+        addListener(fn) {
+          tabChanges.push(fn);
+        },
+      },
+      onUpdated: {
+        addListener(fn) {
+          tabChanges.push(fn);
+        },
+      },
       async create(value) {
         opened.push(structuredClone(value));
+      },
+    },
+    windows: {
+      onFocusChanged: {
+        addListener(fn) {
+          focusChanges.push(fn);
+        },
       },
     },
     runtime: {
@@ -90,10 +110,22 @@ async function setup({
       performance: { timeOrigin: 99999999, now: () => clock.now() + 50000 },
       BENCHMARK_TIMING: benchmarkTiming,
       requestAnimationFrame: (callback) => frames.push(callback),
+      setInterval: (callback) => timerTicks.push(callback),
     },
   );
   await new Promise((resolve) => setImmediate(resolve));
-  return { dom, opened, messages, data, listeners, frames, panelContext };
+  return {
+    dom,
+    opened,
+    messages,
+    data,
+    listeners,
+    frames,
+    panelContext,
+    tabChanges,
+    focusChanges,
+    timerTicks,
+  };
 }
 test("source and redirect links create distinct Chrome tabs with exact intended URLs", async () => {
   const f = await setup();
@@ -432,4 +464,36 @@ test("Off and another owning tab hide evidence and invalidate scheduled paints",
     f.dom.window.document.querySelector("#stage").textContent,
     /owning response/,
   );
+});
+
+test("tab and window ownership changes hide results without storage mutations", async () => {
+  for (const event of ["tabChanges", "focusChanges"]) {
+    const f = await setup();
+    assert.ok(f.dom.window.document.querySelector("article"));
+    f.panelContext.eligible = false;
+    await f[event][0]();
+    while (f.frames.length) f.frames.shift()();
+    assert.equal(f.dom.window.document.querySelector("article"), null);
+    assert.equal(
+      f.dom.window.document.querySelector("#reverify").disabled,
+      true,
+    );
+    assert.match(
+      f.dom.window.document.querySelector("#stage").textContent,
+      /owning response/,
+    );
+    f.panelContext.eligible = true;
+    await f[event][0]();
+    assert.ok(f.dom.window.document.querySelector("article"));
+    assert.equal(f.messages.length, 0);
+  }
+});
+
+test("periodic reconciliation recovers a missed storage notification", async () => {
+  const f = await setup();
+  f.panelContext.eligible = false;
+  f.timerTicks[0]();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.dom.window.document.querySelector("article"), null);
+  assert.equal(f.messages.length, 0);
 });

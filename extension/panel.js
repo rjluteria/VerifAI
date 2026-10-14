@@ -142,7 +142,7 @@ async function render() {
       if (Number.isInteger(data.progress.claim_count))
         element(
           "p",
-          `Checking ${data.progress.claim_count} claims`,
+          `Checking ${data.progress.claim_count} ${data.progress.claim_count === 1 ? "claim" : "claims"}`,
           progressRoot,
         );
       for (const [key, label] of Object.entries(stageLabels)) {
@@ -405,5 +405,14 @@ document.querySelector("#reverify").addEventListener("click", async () => {
   if (result.error) document.querySelector("#stage").textContent = result.error;
 });
 chrome.storage.onChanged.addListener(render);
-if (typeof setInterval === "function") setInterval(updateElapsed, 1000);
+// Ownership can change without a storage write or another result arriving.
+chrome.tabs.onActivated?.addListener(render);
+chrome.tabs.onUpdated?.addListener(render);
+chrome.windows?.onFocusChanged?.addListener(render);
+document.addEventListener("visibilitychange", render);
+if (typeof setInterval === "function")
+  setInterval(() => {
+    updateElapsed();
+    render();
+  }, 1000);
 render();

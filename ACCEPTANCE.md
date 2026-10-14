@@ -23,3 +23,5 @@ Origin headers are defense in depth and can be forged outside a browser. Signed 
 Source availability depends on retrieval time, network, region, authentication and future changes. A correct final verdict does not automatically establish that every quotation is relevant or every cited destination is accessible to every user. Provider agreement and exact substring membership do not establish universal truth.
 
 Stop for user review after the final performance report and evidence-linked matrix. Native Windows manual gate: [WINDOWS_ACCEPTANCE.md](WINDOWS_ACCEPTANCE.md). Do not publish, change repository visibility, add a license, incur spending or declare production readiness without explicit approval.
+
+Version 0.1.14 adds panel lifecycle reconciliation after a native 0.1.13 guarded experiment showed a stale open panel and stale evidence after switching tabs. The first guarded warm sample remains failed: backend 46,400.481 ms; complete visible result after panel reopening 101,854 ms. Controlled label suites passed, but quote quality, current user access, native cohorts and preserved manual requirements remain open. This is not a release qualification.

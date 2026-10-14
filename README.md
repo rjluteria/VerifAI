@@ -10,7 +10,7 @@ The active release target, approved on 14 October 2026, is complete visible resu
 
 The retained 0.1.12 native baseline completed 19 fresh warm jobs: 17/19 response arrays and 25/27 eligible claims matched frozen gold. Median completion was 158.048 seconds, maximum 541.438 seconds, with zero five-second successes. Those historical results remain unchanged. Cached restores are separate from fresh verification.
 
-The 0.1.13 development panel presents actual job stages, elapsed time, a 30-second warm target, pending overruns and final result counts. Progress is a versioned, content-free snapshot from the existing owner-protected job endpoint; the old transport remains compatible. Experimental quotation, source-block, unit-arithmetic and per-job embedding-cache changes remain disabled by default until qualified. Native integration and release acceptance are pending.
+The 0.1.14 development panel presents actual job stages, elapsed time, a 30-second warm target, pending overruns and final result counts. Progress is a versioned, content-free snapshot from the existing owner-protected job endpoint; the old transport remains compatible. Experimental quotation, source-block, unit-arithmetic and per-job embedding-cache changes remain disabled by default until qualified. Native integration and release acceptance are pending. Panel ownership is reconciled on tab/window/visibility changes and periodically, including when a storage notification is missed.
 
 | Status              | Meaning                                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
