@@ -2,6 +2,8 @@
 
 VerifAI is a Chrome extension that evaluates factual claims in AI-generated responses. It examines cited sources, retrieves independent evidence, and presents claim-level results with supporting quotations and source links. VerifAI currently supports ChatGPT. Its verdicts are evidence-based assessments, not guarantees of truth.
 
+Version **0.1.19** connects to the existing hosted service at `https://verifai-ekan.onrender.com`. Two fixed NVIDIA NIM reviewers evaluate evidence. Users do not need API keys, model settings or infrastructure. The repository remains private until publication is approved.
+
 ## Features
 
 - **Verification:** automatic completed-response detection, factual claim extraction, citation checks, independent evidence discovery, four claim verdicts, source quotations and links, and Re-verify.
@@ -52,11 +54,9 @@ The normal ZIP is a flat extension package: `manifest.json` and the other extens
 - **Active/Paused:** with verification enabled, eligible HTTPS ChatGPT pages can be Active. Unsupported sites, inactive tabs or a response that no longer owns the panel pause/hide its verification view. Return to the owning ChatGPT response to resume viewing. Pausing is automatic; there is no separate manual Pause button.
 - **Progress:** the inline indicator and side panel show actual verification stages, elapsed time and available counts. Beyond the 30-second target, the application continues rather than manufacturing a verdict.
 - **Evidence:** select **View details**, inspect each claim's citation and discovery tracks, read the quotations/retrieval information, and open source links. Unsupported sources have no supporting quotations.
-- **Re-verify:** starts a fresh job for the displayed owning response. Cached results retain their original evidence and timestamps; they are not new verification or new-model measurements.
+- **Re-verify:** starts a fresh job for the displayed owning response. Cached results retain their original evidence and timestamps; they are not fresh verification measurements.
 - **History:** Settings → choose retention → enable **Save local verification history** → **Save settings**. Options are 24 hours, 7 days, 30 days, or Until manually cleared. **Clear saved history** removes saved local history. Saving history Off clears that saved history and stops future saving; session results can still remain visible. See [PRIVACY.md](PRIVACY.md).
 - **Failures:** read the displayed failure/incomplete message, confirm connectivity and permissions, and retry using Re-verify when the provider/service recovers. An Unverified label alone is not proof of a transport failure or proof that a claim is false.
-
-## Configuration
 
 ## Architecture
 
@@ -78,15 +78,15 @@ Provider credentials stay server-side. Restricted permissions, signed-session ow
 | --- | --- |
 | Verification does not start | Enable verification, grant service access in Settings, confirm the server allowlists this extension ID, activate a supported ChatGPT tab and wait for the assistant response to finish. Refresh ChatGPT after updating/reloading the extension. |
 | Remains Paused | Return to the supported active tab and owning response. Off must be switched On through the normal control. Unsupported websites never activate verification. |
-| Backend connection failure | Check permissions, allowlisted origin, `/health`, network and free-host wake-up. Only the operator can fix server credentials/configuration. |
+| Backend connection failure | Check permissions, allowlisted origin, `/health`, network and free-host wake-up. Only the operator can fix service credentials. |
 | Long verification | Inspect actual progress; the 30-second target is not a timeout that fabricates a verdict. Provider timeouts/retries and source acquisition can take minutes. |
 | Source unavailable | Inspect the unavailable entry. Login/challenges/unsupported content cannot be bypassed or used as proof. Other accessible sources may still be checked. |
-| Provider error/incomplete analysis | The operator checks account/model availability and request budgets. Retry after recovery; changing models does not repair source access. |
+| Provider error/incomplete analysis | The operator checks provider availability and service limits. Retry after recovery; unavailable source evidence cannot establish support. |
 | Side panel belongs to another response | Select View details on the intended response; return to its owning tab before using Re-verify. |
 
 ## Development and release checks
 
-Python 3.14 runs the standard-library backend/tests; Node.js 24+ runs the JavaScript tests and formatter. Use `python -m unittest discover -s tests -v`, `npm ci`, `npm test`, `npm run format:check`, and the configured Ruff checks. `python scripts/package.py` creates the normal ZIP. CI also builds the pinned Docker image on the current workflow. No model key is needed for deterministic tests or example-schema validation. Live verification needs server credentials.
+Python 3.14 runs the standard-library backend/tests; Node.js 24+ runs the JavaScript tests and formatter. Use `python -m unittest discover -s tests -v`, `npm ci`, `npm test`, `npm run format:check`, and the configured Ruff checks. `python scripts/package.py` creates the normal ZIP. CI also builds the pinned Docker image on the current workflow. No provider key is needed for deterministic tests. Live verification uses credentials held by the hosted service.
 
 See [CHANGELOG.md](CHANGELOG.md), [RELEASE_NOTES.md](RELEASE_NOTES.md), [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md), and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md). Manual and automated checks are distinguished; a checklist's unperformed item is not a passing native test.
 

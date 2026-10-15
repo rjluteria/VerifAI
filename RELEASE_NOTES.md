@@ -8,7 +8,11 @@ A Chrome extension for ChatGPT response verification with claim-level Supported,
 
 ## Improvements
 
-## Installation and configuration
+Bounded parallel evidence reviews, job-local proof/embedding reuse, precise quotation/table boundaries, response/run ownership guards, provider redirect and identity validation, and the duplicate alternate-search fix.
+
+## Installation
+
+Use Chrome 120+, extract the normal ZIP and Load unpacked from the folder containing manifest.json. The existing service operator must allow the installation’s exact extension ID. Grant the packaged service permission in Settings, then enable verification on ChatGPT. See [INSTALLATION.md](INSTALLATION.md).
 
 Use Chrome 120+ and the normal `verifai-0.1.19.zip`; extract and Load unpacked from the folder containing `manifest.json`. The backend operator must allow the installation's exact extension ID and configure credentials; the user must grant the packaged service permission through Settings before enabling verification. A new installation starts Off, and history starts Off. Previously enabled installations reactivate verification on browser startup, including after Off; review the control after restart.
 
@@ -21,6 +25,8 @@ The 30-second target is not guaranteed. Models, search, network/source access an
 Physical Windows Chrome/Docker, actual elapsed retention, genuine pending-worker suspension and clean-profile native control coverage are separately disclosed in [RELEASE_CHECKLIST.md](RELEASE_CHECKLIST.md). Automated tests do not substitute for unperformed native checks. No universal factual accuracy or guaranteed maximum time is claimed.
 
 ## Artifacts and rollback
+
+The normal extension ZIP, matching cleaned source archive and SHA256SUMS are supplied after approved history cleanup. Users connect to the existing hosted backend; no API keys or infrastructure are needed. See [INSTALLATION.md](INSTALLATION.md).
 
 ## Rights and dependencies
 

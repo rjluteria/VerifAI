@@ -30,3 +30,7 @@ No dedicated security email or private vulnerability-reporting service is config
 
 Do not rotate credentials, rewrite history, change permissions or publish an advisory automatically. A suspected exposed credential requires owner review. The release audit checks current files, packages and locally reachable Git history for known patterns; that bounded scan is not proof that no secret can exist.
 
+
+## Provider credentials
+
+Only the hosted backend reads NVIDIA_API_KEY from its secret environment. No provider keys, model selectors or server URL fields are offered to extension users. Credential-bearing requests use the fixed NVIDIA destination and refuse redirects; provider response identity/schema checks fail closed. Keep session and discovery secrets in the server secret store.

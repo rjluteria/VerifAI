@@ -8,7 +8,6 @@ The Mercury axial/solar confusion is retained as a reviewer semantic limitation:
 
 ## Current distribution scope — 15 October 2026, version 0.1.18
 
-Current checks: 196 Python tests and 99 JavaScript tests passed locally, with configured Ruff and Prettier checks. The preceding revision passed the Linux/macOS/Windows CI matrix and Docker build; the final revision must retain those checks before handoff. The normal extension package disables benchmark clocks and contains no server credentials or model configuration.
 
 Live evidence retained privately: original supplied-evidence comparison 4/4 correct; optimized alternative pair 2/2 correct with exact quotations, while the original pair had 2/2 incomplete results with provider HTTP 503 failures. These are only two distinct supplied cases. A hosted two-claim vitamin-D test returned both expected verdicts with complete evidence in 253.939 seconds. Provider HTTP spans covered 229.401 seconds; 24.537 seconds lay outside those spans. This supports provider-dominated delay, not an assertion that every delay is model compute. The subsequently narrowed proof lock is covered by a concurrency regression; the older hosted timing is not relabeled as a measurement of that change.
 

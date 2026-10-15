@@ -1,10 +1,22 @@
 # Architecture
 
-VerifAI 0.1.19 consists of a Chrome Manifest V3 extension and one Python verification service. The extension supports HTTPS `chatgpt.com` and `chat.openai.com` pages. The configured backend is the existing Render service. Chat models use NVIDIA NIM's fixed hosted endpoint; JSON does not supply endpoints, credentials or prompts.
+VerifAI 0.1.19 consists of a Chrome Manifest V3 extension and one Python verification service. The extension supports HTTPS `chatgpt.com` and `chat.openai.com` pages. The configured backend is the existing Render service. Chat models use NVIDIA NIM's fixed hosted endpoint. Credentials and prompts remain internal to the service.
+
+```mermaid
+flowchart LR
+    C[Completed ChatGPT response] --> E[Chrome extension]
+    E --> B[Hosted backend and owned job]
+    B --> R[Citations and independent retrieval]
+    R --> P[Passages and exact provenance]
+    P --> M[Fixed NVIDIA NIM reviewers]
+    M --> V[Validated verdicts and evidence]
+    V --> E
+    B -->|Progress| E
+```
 
 ## Chrome extension
 
-`manifest.json` declares storage, sidePanel and alarms; content-script host access is restricted to the two supported ChatGPT hosts. The hosted service origin is an optional permission. There is no all-sites permission. A different packaged backend must update both endpoint and optional host permission through the packaging script.
+`manifest.json` declares storage, sidePanel and alarms; content-script host access is restricted to the two supported ChatGPT hosts. The hosted service origin is an optional permission. There is no all-sites permission. The packaged endpoint is fixed to the existing hosted service.
 
 `content.js` detects supported completed assistant responses, associates citations and revisions, and displays inline states. The worker rechecks active-tab, URL, response identity and revision before submission. Stale Re-verify replies cannot overwrite a different displayed run. Unsupported sites do not activate verification. Pausing is automatic when eligibility or ownership is lost; it does not cancel already accepted remote work.
 
@@ -29,6 +41,8 @@ The service admits at most two verification jobs and bounds HTTP completion wait
 `precise_text.py` retains paragraph and table-row context while excluding executable/template content. Short documents retain full supported text. Longer documents use sentence-bounded lexical candidates and optional embedding ranking; passage/source offsets and hashes are retained. Identical text and exact transport aliases are reused within the job while preserving each URL and track.
 
 ## Review and aggregation
+
+The fixed reviewers are `nvidia/nemotron-3-super-120b-a12b` and `poolside/laguna-xs-2.1`; the existing attributed standby is `openai/gpt-oss-20b`. They use the NVIDIA NIM endpoint with backend-only credentials. Fixed request settings retain temperature 0, a 4096-token ceiling, a 60-second transport timeout and one retry. Reviewer/source concurrency, admission pacing, job-local caches, redirect refusal and response identity checks remain in place. Code owns prompts and verdict rules. No client request can choose the reviewer or provider.
 
 Reviewer IDs select exact evidence units; code verifies IDs, positions and selected-source boundaries. Grounded unit conversion uses exact arithmetic only after two distinct reviewers validate an applicable quoted definition. Ambiguous/conflicting coefficients or qualifiers do not force arithmetic. Agreement and exact quotes do not establish truth: reviewers may still select the wrong measurement.
 

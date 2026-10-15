@@ -1,5 +1,6 @@
 import io
 import json
+import os
 import sys
 import threading
 import unittest
@@ -74,3 +75,34 @@ class ProviderSecurityTests(unittest.TestCase):
                     str(error.exception),
                     ("model-response-schema", "model-response-identity"),
                 )
+
+    def test_fixed_reviewers_and_server_only_credential(self):
+        with patch.dict(
+            os.environ, {"NVIDIA_API_KEY": "synthetic-server-only"}, clear=True
+        ):
+            model = Models()
+        self.assertEqual(
+            model.names, ["nvidia/nemotron-3-super-120b-a12b", "poolside/laguna-xs-2.1"]
+        )
+        self.assertEqual(model.standby, "openai/gpt-oss-20b")
+        response = {
+            "model": model.names[0],
+            "choices": [{"finish_reason": "stop", "message": {"content": "{}"}}],
+        }
+        with patch(
+            "verifai.model.paced_open",
+            return_value=io.BytesIO(json.dumps(response).encode()),
+        ) as opened:
+            self.assertEqual(
+                model.call(model.names[0], "Code-owned rules", {"claim": "synthetic"}),
+                {},
+            )
+        request = opened.call_args.args[0]
+        self.assertEqual(
+            request.full_url, "https://integrate.api.nvidia.com/v1/chat/completions"
+        )
+        self.assertEqual(opened.call_args.kwargs["timeout"], 60)
+        self.assertEqual(
+            request.headers["Authorization"], "Bearer synthetic-server-only"
+        )
+        self.assertNotIn(b"synthetic-server-only", request.data)
