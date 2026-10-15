@@ -44,6 +44,33 @@ class SourceBlockCandidateTests(unittest.TestCase):
             "In 2020 the estimate was 13 metres.\n\nCorrection: the current aperture is 8 metres.",
         )
 
+    def test_nested_list_values_keep_their_table_measurement_header(self):
+        text = self.parse(
+            "<table><tr><th><div>Stellar rotation period</div></th>"
+            "<td><div><ul><li>12 hours</li><li>0.5 days</li></ul></div></td>"
+            "</tr><tr><th>Solar cycle</th><td>24 hours</td></tr></table>"
+        )
+        blocks = text.split("\n\n")
+        self.assertEqual(len(blocks), 2)
+        self.assertIn("Stellar rotation period", blocks[0])
+        self.assertIn("12 hours", blocks[0])
+        self.assertIn("0.5 days", blocks[0])
+        self.assertNotIn("Solar cycle", blocks[0])
+        self.assertEqual(blocks[1], "Solar cycle\n24 hours")
+
+    def test_nested_paragraphs_keep_unit_scale_and_reporting_basis(self):
+        text = self.parse(
+            "<table><tr><th>Revenue, thousands of euros</th><td>"
+            "<p>2024: 25</p><p>2025: 30</p></td></tr>"
+            "<tr><th>Headcount</th><td>25</td></tr></table>"
+            "<p>No currency conversion rate is provided.</p>"
+        )
+        blocks = text.split("\n\n")
+        self.assertEqual(len(blocks), 3)
+        self.assertEqual(blocks[0], "Revenue, thousands of euros\n2024: 25\n2025: 30")
+        self.assertEqual(blocks[1], "Headcount\n25")
+        self.assertEqual(blocks[2], "No currency conversion rate is provided.")
+
     def test_html_indentation_is_not_a_false_semantic_boundary(self):
         text = self.parse("<p>Vitamin\n\n D is <span>not</span> a cure.</p>")
         self.assertNotIn("\n\n", text)

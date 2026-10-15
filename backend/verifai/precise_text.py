@@ -14,6 +14,7 @@ class Text(HTMLParser):
         self.publication = Publication()
         self.jsonld_parts = None
         self.jsonld_size = 0
+        self.row_depth = 0
 
     def handle_starttag(self, tag, attrs):
         attributes = dict(attrs)
@@ -47,6 +48,10 @@ class Text(HTMLParser):
         if tag in ("script", "style", "noscript", "template"):
             self.hidden += 1
         if not self.hidden:
+            if tag == "tr":
+                self.parts.append("\n\n" if not self.row_depth else "\r")
+                self.row_depth += 1
+                return
             if tag in (
                 "p",
                 "li",
@@ -61,9 +66,12 @@ class Text(HTMLParser):
                 "dt",
                 "dd",
             ):
-                self.parts.append("\n\n")
+                # Lists and paragraphs inside a table cell belong to that
+                # row's header. Splitting them into independent evidence IDs
+                # would detach a value from its measurement or qualifier.
+                self.parts.append("\r" if self.row_depth else "\n\n")
             elif tag in ("br", "div", "td", "th"):
-                self.parts.append("\n")
+                self.parts.append("\r" if self.row_depth else "\n")
 
     def handle_endtag(self, tag):
         if tag == "script" and self.jsonld_parts is not None:
@@ -73,6 +81,10 @@ class Text(HTMLParser):
         if tag in ("script", "style", "noscript", "template") and self.hidden:
             self.hidden -= 1
         if not self.hidden:
+            if tag == "tr":
+                self.parts.append("\n\n" if self.row_depth <= 1 else "\r")
+                self.row_depth = max(0, self.row_depth - 1)
+                return
             if tag in (
                 "p",
                 "li",
@@ -87,9 +99,9 @@ class Text(HTMLParser):
                 "dt",
                 "dd",
             ):
-                self.parts.append("\n\n")
+                self.parts.append("\r" if self.row_depth else "\n\n")
             elif tag in ("div",):
-                self.parts.append("\n")
+                self.parts.append("\r" if self.row_depth else "\n")
             else:
                 self.parts.append(" ")
 
