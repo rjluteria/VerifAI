@@ -1,5 +1,15 @@
 # Acceptance status
 
+## Current distribution scope — 15 October 2026, version 0.1.18
+
+Current checks: 196 Python tests and 99 JavaScript tests passed locally, with configured Ruff and Prettier checks. The preceding revision passed the Linux/macOS/Windows CI matrix and Docker build; the final revision must retain those checks before handoff. The normal extension package disables benchmark clocks and contains no server credentials or model configuration.
+
+Live evidence retained privately: original supplied-evidence comparison 4/4 correct; optimized alternative pair 2/2 correct with exact quotations, while the original pair had 2/2 incomplete results with provider HTTP 503 failures. These are only two distinct supplied cases. A hosted two-claim vitamin-D test returned both expected verdicts with complete evidence in 253.939 seconds. Provider HTTP spans covered 229.401 seconds; 24.537 seconds lay outside those spans. This supports provider-dominated delay, not an assertion that every delay is model compute. The subsequently narrowed proof lock is covered by a concurrency regression; the older hosted timing is not relabeled as a measurement of that change.
+
+The historical Mercury axial-versus-solar-period error remains a model qualification failure, with full source context and raw reviewer decisions retained. Exact quote membership does not prove semantic entailment. An unavailable provider, missing review, or inaccessible source must remain visibly incomplete/unverified. Native Windows hardware, elapsed retention and genuine pending-worker suspension are not newly certified by automated platform tests.
+
+## Historical acceptance record
+
 VerifAI remains a private development candidate. On 14 October 2026 the user replaced the five-second release threshold with 30 seconds for all preregistered healthy, warm, fresh complete native renders. The new gate is NOT TESTED for this development revision; correctness/source qualification remains open. Cold and degraded cohorts are separately measured and disclosed, with honest pending/overrun/failure behavior. No deadline fabricates a verdict. Bounded regression scores are not universal factual-accuracy guarantees. Frozen inputs, gold and historical measurements are unchanged.
 
 The table below preserves prior-phase results; it does not qualify version 0.1.13 or the active 30-second contract. The latest retained 0.1.12 baseline has 19 warm jobs, 25/27 correct eligible atoms and no five-second successes, with median 158.048 seconds and maximum 541.438 seconds. See the private requirements-recovery report for all attempts. A new preregistered comparable cohort must qualify the active threshold.

@@ -585,8 +585,23 @@ class Engine:
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
         ranking_lock = threading.Lock()
-        reference_lock = threading.RLock()
+        reference_locks = {}
+        reference_locks_guard = threading.Lock()
         reference_cache = {} if os.getenv("JOB_REFERENCE_CACHE", "1") == "1" else None
+
+        def reference_guard(claim, evidence):
+            if (
+                reference_cache is None
+                or os.getenv("GROUNDED_UNIT_ARITHMETIC", "1") != "1"
+            ):
+                return nullcontext()
+            plan = plan_conversion(claim, evidence)
+            if plan is None:
+                return nullcontext()
+            # Share only identical proofs; independent source contexts can overlap.
+            key = (plan.reference_claim, evidence, tuple(self.models.names))
+            with reference_locks_guard:
+                return reference_locks.setdefault(key, threading.RLock())
 
         def independent_counts():
             # Count actual selected URL checks, not search snippets or originals.
@@ -801,13 +816,7 @@ class Engine:
                     )
                 evidence = "\n\n".join(p["text"] for p in selected)
                 with (
-                    (
-                        reference_lock
-                        if reference_cache is not None
-                        and os.getenv("GROUNDED_UNIT_ARITHMETIC", "1") == "1"
-                        and plan_conversion(claim, evidence)
-                        else nullcontext()
-                    ),
+                    reference_guard(claim, evidence),
                     measured(
                         "classification",
                         source_id=source_ids[url],
