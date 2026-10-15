@@ -414,14 +414,20 @@ async function render() {
 }
 document.querySelector("#reverify").addEventListener("click", async () => {
   if (!displayedResponse) return;
+  const requestedResponse = displayedResponse;
   const result = await chrome.runtime.sendMessage({
     type: "reverify",
-    ...displayedResponse,
+    ...requestedResponse,
     ...(BENCHMARK_TIMING
       ? { benchmarkStartedAt: Date.now(), benchmarkClock: "wall-clock-v3" }
       : {}),
   });
-  if (result.error) document.querySelector("#stage").textContent = result.error;
+  if (
+    result.error &&
+    displayedResponse?.responseKey === requestedResponse.responseKey &&
+    displayedResponse?.expectedRunId === requestedResponse.expectedRunId
+  )
+    setStatus(result.error);
 });
 chrome.storage.onChanged.addListener(render);
 // Ownership can change without a storage write or another result arriving.

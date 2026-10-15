@@ -8,6 +8,7 @@ async function setup({
   benchmarkTiming = false,
   clock = Date,
   panelContext = { eligible: true, on: true },
+  reverifyResponse = async () => ({ ok: true }),
 } = {}) {
   const dom = new JSDOM(
     '<p id="stage"></p><section id="progress"></section><p id="elapsed"></p><button id="reverify"></button><main id="results"></main>',
@@ -100,7 +101,9 @@ async function setup({
               runId: data[data.selected]?.runId || null,
               ...panelContext,
             }
-          : { ok: true };
+          : value.type === "reverify"
+            ? reverifyResponse(value)
+            : { ok: true };
       },
     },
   };
@@ -195,6 +198,34 @@ test("panel refuses results when ownership check refers to another selection", a
   assert.match(
     f.dom.window.document.querySelector("#stage").textContent,
     /owning response/,
+  );
+});
+
+test("late reverify rejection cannot replace a newer run status", async () => {
+  let rejectRequest;
+  const f = await setup({
+    reverifyResponse: () =>
+      new Promise((resolve) => {
+        rejectRequest = resolve;
+      }),
+  });
+  f.dom.window.document.querySelector("#reverify").click();
+  f.data.first.runId = "newer-run";
+  f.data.first.result = undefined;
+  f.data.first.executionState = "queued";
+  f.data.first.triggeredAt = Date.now();
+  await f.listeners[0]();
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Verifying…",
+  );
+  rejectRequest({
+    error: "The displayed response changed. Reopen its details first.",
+  });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(
+    f.dom.window.document.querySelector("#stage").textContent,
+    "Verifying…",
   );
 });
 
