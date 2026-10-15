@@ -16,7 +16,7 @@ Publication is not authorized by this checklist. Keep the repository private and
 ## Functional evidence
 
 - [x] Existing native Chrome installation upgraded/reloaded to functional 0.1.19 baseline; ChatGPT refresh and cached restoration observed.
-- [x] Genuine fresh native Re-verify: Mercury axial-176 returned Contradicted, with progress, continuing overrun and visible final result/evidence. UI-reported 158.9 seconds; not exact first-paint qualification.
+- [x] Genuine fresh native Re-verify: release-preparation Mercury axial-59 returned Supported in UI-reported 85.8 seconds; prior axial-176 returned Contradicted in 158.9 seconds. Progress, continuing overrun and visible final evidence observed; not exact first-paint qualification.
 - [x] Owner-bound side panel, source links and code-level unsupported-site/default-state/history/lifecycle behavior covered by current regression tests and retained native observations.
 - [x] Latest retained hosted vitamin-D two-claim result matched both gold labels, with no incomplete claims; same reasoning pipeline, separately scoped prior live measurement.
 - [ ] **MANUAL REQUIRED:** clean Chrome profile installation and service-origin approval, initial Off, enable/disable, unsupported-site pausing and side-panel operation. Existing-profile update and automated default/permission tests are not a clean-profile native install.

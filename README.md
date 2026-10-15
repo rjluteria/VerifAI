@@ -64,7 +64,7 @@ The Manifest V3 extension handles response capture, owner-bound state, progress 
 
 ## Limitations and performance
 
-The target is 30 seconds for healthy, warm, fresh verification; it is not a guarantee. External models, search, retrieval and free-host cold starts can make a verification take several minutes. The latest recorded fresh native Mercury check on the functional baseline reported 158.9 seconds and returned the expected Contradicted verdict. The UI included browser results/progress, but this was not a complete warm/cold cohort or exact first-paint qualification.
+The target is 30 seconds for healthy, warm, fresh verification; it is not a guarantee. External models, search, retrieval and free-host cold starts can make a verification take several minutes. The latest release-preparation fresh native Mercury check reported 85.8 seconds and returned the expected Supported verdict for its 59-day axial-rotation claim. The prior 176-day axial-rotation check returned the expected Contradicted verdict in 158.9 seconds. The UI included browser results/progress, but this was not a complete warm/cold cohort or exact first-paint qualification.
 
 Models can make incorrect judgments, including confusing two measurement properties despite relevant evidence. Sources can be unavailable, incomplete, region-restricted, login-dependent or later changed. A source accessible to the backend may differ from what a browser can access. Complex tables, media and arbitrary code execution are outside supported text verification. Results must be reviewed alongside the evidence. No universal accuracy or maximum-latency claim is made. Historical acceptance evidence is preserved in [ACCEPTANCE.md](ACCEPTANCE.md).
 
