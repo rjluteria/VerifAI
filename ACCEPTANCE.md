@@ -1,5 +1,11 @@
 # Acceptance status
 
+## Final diagnostic revision — 0.1.19
+
+The final audit traced claim extraction, exact-claim search queries, primary/alternate discovery, bounded public retrieval, passage ranking, code-owned review and source aggregation. It confirmed a redundant alternate request when primary discovery was empty and alternate pages were unavailable. The engine now owns alternate discovery; a failing-before/passing-after regression preserves unavailable-source records and Unverified outcomes. No new models or architecture were introduced.
+
+The Mercury axial/solar confusion is retained as a reviewer semantic limitation: the recorded inputs contain both measurement definitions, while raw reviewer explanations substitute the solar-day property. Vitamin-D exact arithmetic remains grounded in a two-reviewer-validated source definition and retains conflicting-rate, unit, identity, quotation and qualifier guards. The final diagnostic report distinguishes current fresh observations from prior bounded tests and unperformed manual checks.
+
 ## Current distribution scope — 15 October 2026, version 0.1.18
 
 Current checks: 196 Python tests and 99 JavaScript tests passed locally, with configured Ruff and Prettier checks. The preceding revision passed the Linux/macOS/Windows CI matrix and Docker build; the final revision must retain those checks before handoff. The normal extension package disables benchmark clocks and contains no server credentials or model configuration.

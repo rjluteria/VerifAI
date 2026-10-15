@@ -90,6 +90,80 @@ class NetworkTests(unittest.TestCase):
                 discovery("archive opening"), ["https://example.org/archive"]
             )
 
+    def test_empty_primary_search_runs_alternate_discovery_only_once(self):
+        from verifai.engine import Engine
+        from verifai.sources import encyclopedia
+
+        claim = "The beacon is blue."
+
+        class Model:
+            def extract(self, text):
+                return [{"text": text, "quote": text}], []
+
+        def search_response(request, **kwargs):
+            if request.full_url == "https://api.tavily.com/search":
+                return io.BytesIO(b'{"results": []}')
+            return io.BytesIO(b'{"query": {"search": [{"pageid": 123}]}}')
+
+        with (
+            patch.dict("os.environ", {"ALLOW_KEYLESS_SEARCH": "1"}),
+            patch(
+                "verifai.sources.urllib.request.urlopen", side_effect=search_response
+            ) as requests,
+        ):
+            result = Engine(
+                Model(),
+                lambda url: {"url": url, "accessible": False, "error": "Unavailable"},
+                discovery,
+                encyclopedia,
+            ).verify(claim, [])
+        alternate_requests = [
+            c
+            for c in requests.call_args_list
+            if c.args[0].full_url.startswith("https://en.wikipedia.org/w/api.php?")
+        ]
+        self.assertEqual(len(alternate_requests), 1)
+        row = result["claims"][0]
+        self.assertEqual(row["label"], "UNVERIFIED")
+        self.assertEqual(len(row["tracks"]["independent"]), 1)
+        self.assertFalse(row["tracks"]["independent"][0]["accessible"])
+
+    def test_unconfigured_optional_search_uses_complete_alternate_evidence(self):
+        from verifai.engine import Engine
+
+        claim = "The beacon is blue."
+        url = "https://example.org/beacon"
+
+        class Model:
+            names = ("primary", "secondary")
+
+            def extract(self, text):
+                return [{"text": text, "quote": text}], []
+
+            def rank(self, claim, candidates):
+                return candidates
+
+            def judge(self, name, claim, evidence):
+                return {"label": "SUPPORTED", "quotes": [evidence], "reason": "Proof"}
+
+        with patch.dict("os.environ", {}, clear=True):
+            result = Engine(
+                Model(),
+                lambda url: {
+                    "url": url,
+                    "text": claim,
+                    "accessible": True,
+                    "checked_at": 1,
+                    "sha256": "fixture",
+                },
+                discovery,
+                lambda query: [url],
+            ).verify(claim, [])
+        row = result["claims"][0]
+        self.assertEqual(row["label"], "SUPPORTED")
+        self.assertEqual(row["errors"], [])
+        self.assertEqual(row["tracks"]["independent"][0]["url"], url)
+
     def test_public_fetch_has_no_cookies_or_credentials(self):
         seen = []
         result = fetch(

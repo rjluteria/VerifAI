@@ -185,7 +185,9 @@ def discovery(query):
             for search_query in (query, query + " official source")
         ]
         urls = list(dict.fromkeys(url for future in futures for url in future.result()))
-    return urls or encyclopedia(query)
+    # The engine owns alternate discovery after checking acquired evidence.
+    # Falling back here would repeat the same search if its pages are unavailable.
+    return urls
 
 
 def encyclopedia(query):
