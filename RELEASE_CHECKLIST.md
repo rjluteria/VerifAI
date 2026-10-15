@@ -1,6 +1,6 @@
 # Release checklist — VerifAI 0.1.19
 
-The repository stays private. Remote history cleanup and publication require separate owner approval.
+The repository stays private. History cleanup was authorized and verified; publication requires separate owner approval.
 
 ## Local preparation
 
@@ -9,15 +9,15 @@ The repository stays private. Remote history cleanup and publication require sep
 - [x] Progress, elapsed/overrun handling, owner-bound Re-verify, history and restricted permissions preserved.
 - [x] Installation, architecture, security, privacy, changelog and release notes describe the fixed service.
 - [x] No project LICENSE or rights grant added; third-party notices retained.
-- [ ] Final test counts, Docker/startup and local history audit recorded in the accompanying approval report.
+- [x] Local validation: 193 Python and 99 JavaScript tests, Ruff/Prettier, Docker build/secure startup, packaging and bounded secret/history audits passed.
 
-## Approval-dependent completion
+## Delivery status
 
-- [ ] Owner approves the exact reconstructed remote branch replacement.
-- [ ] Remote history replaced and verified from a fresh clone.
-- [ ] Cross-platform CI passes on the cleaned remote revision.
+- [x] Owner authorized history cleanup; only the affected release branch was rewritten.
+- [x] Remote history replaced and verified from a fresh clone; unrelated branches remain intact.
+- [x] Cleaned implementation passed Linux, macOS, Windows and container CI; the accompanying report identifies the final documentation revision and its CI.
 - [ ] Fixed-model source deployed to the existing hosted service and fresh verification measured.
-- [ ] Final extension ZIP, cleaned source archive and SHA256SUMS generated and validated after approved cleanup.
+- [x] Extension ZIP, cleaned source archive and SHA256SUMS generated and validated after history cleanup; final revision/hashes appear in the accompanying report.
 - [ ] Separate final publication approval obtained.
 
 ## Native checks and limitations

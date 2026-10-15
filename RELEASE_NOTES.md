@@ -18,7 +18,7 @@ Use Chrome 120+ and the normal `verifai-0.1.19.zip`; extract and Load unpacked f
 
 ## Performance and known limitations
 
-The release-preparation genuine fresh native Mercury check returned the expected Supported verdict for the 59-day claim with UI-reported 85.8 seconds. The prior 176-day claim returned the expected Contradicted verdict in 158.9 seconds. Browser results/progress were observed; observation timestamps and polling bounds were retained. This was not an exact first-paint or full warm/cold cohort qualification. Normal Cached results are separate from fresh verification.
+A retained release-preparation genuine fresh native Mercury check returned the expected Supported verdict for the 59-day claim with UI-reported 85.8 seconds. The prior 176-day claim returned the expected Contradicted verdict in 158.9 seconds. Browser results/progress were observed; observation timestamps and polling bounds were retained. This was not an exact first-paint or full warm/cold cohort qualification. Normal Cached results are separate from fresh verification.
 
 The 30-second target is not guaranteed. Models, search, network/source access and free-host cold starts can require several minutes. A retained instrumented run had 229.401 of 253.939 seconds overlapping provider HTTP spans; this is network/service time, not exclusive GPU/LLM attribution. Provider HTTP 503s/timeouts and incorrect semantic judgments have occurred. Exact quotes and reviewer agreement do not guarantee truth. Inaccessible sources and failed reviews remain unavailable/inconclusive/incomplete; the overrun message does not fabricate a verdict.
 
