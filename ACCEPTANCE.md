@@ -27,3 +27,4 @@ Stop for user review after the final performance report and evidence-linked matr
 Version 0.1.14 adds panel lifecycle reconciliation after a native 0.1.13 guarded experiment showed a stale open panel and stale evidence after switching tabs. The first guarded warm sample remains failed: backend 46,400.481 ms; complete visible result after panel reopening 101,854 ms. Controlled label suites passed, but quote quality, current user access, native cohorts and preserved manual requirements remain open. This is not a release qualification.
 
 Version 0.1.15 fixes a developer-clock defect found when reopening a completed fresh panel: the benchmark record now retains the saved first complete paint. Cache restoration retains its separate new dispatch/paint clock. The original 153,914 ms observation is preserved; later reopening is not a new fresh measurement. Native qualification remains pending.
+

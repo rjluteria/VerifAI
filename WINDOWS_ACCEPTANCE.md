@@ -12,3 +12,4 @@ Prerequisites: current Windows Chrome, the prepared extension package extracted,
 6. Quit Chrome completely and reopen it. Step 2 previously enabled verification, so the documented new-session rule restores it enabled even though step 5 switched it **Off** for that session. Confirm **Paused** outside ChatGPT and **Active** on the synthetic chat. This differs from the worker/extension reload in step 5, which must preserve **Off** within the same browser session. Finish with verification and history **Off**.
 
 Record Chrome/Windows versions, each observation, failures, and screenshots containing only the synthetic test. Backend, unit, security, and CI suites do not need to be rerun manually for this gate. A failure leaves native Windows acceptance incomplete.
+

@@ -35,10 +35,16 @@ def decomposition_scope():
 
 def request_interval():
     try:
-        value = float(os.getenv("MODEL_REQUEST_INTERVAL_SECONDS", "3"))
+        value = float(os.getenv("MODEL_REQUEST_INTERVAL_SECONDS", "0.1"))
         return max(0, min(3, value)) if math.isfinite(value) else 3
     except ValueError:
         return 3
+
+
+class ProviderRedirectGuard(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, request, fp, code, message, headers, newurl):
+        # Never forward the backend credential or evidence to another endpoint.
+        return None
 
 
 def paced_open(request, timeout):
@@ -46,12 +52,15 @@ def paced_open(request, timeout):
     # Share pacing across all model instances/jobs in this server process.
     with measured("pacing_queue"):
         with _REQUEST_LOCK:
-            wait = max(0, _LAST_REQUEST + request_interval() - time.monotonic())
+            interval = request_interval()
+            wait = max(0, _LAST_REQUEST + interval - time.monotonic())
             if wait:
                 time.sleep(wait)
             _LAST_REQUEST = time.monotonic()
     with measured("provider_transport") as outcome:
-        response = urllib.request.urlopen(request, timeout=timeout)
+        response = urllib.request.build_opener(ProviderRedirectGuard()).open(
+            request, timeout=timeout
+        )
         outcome["http_status"] = getattr(response, "status", 200)
         return response
 
@@ -216,11 +225,13 @@ def review_pair(models, claim, evidence, reconsider=False):
 class Models:
     def __init__(self):
         self.names = [
-            os.getenv("PRIMARY_MODEL", "nvidia/nemotron-3-super-120b-a12b"),
-            os.getenv("FALLBACK_MODEL", "poolside/laguna-xs-2.1"),
+            "nvidia/nemotron-3-super-120b-a12b",
+            "poolside/laguna-xs-2.1",
         ]
+        self.standby = "openai/gpt-oss-20b"
+        self.source_review_concurrency = 2
         self.key = os.getenv("NVIDIA_API_KEY", "")
-        self.parallel_reviews = os.getenv("PARALLEL_REVIEWS", "0") == "1"
+        self.parallel_reviews = os.getenv("PARALLEL_REVIEWS", "1") == "1"
 
     def reconcile(self, claim, evidence):
         # A fresh pair during an observed cooldown would immediately reuse the
@@ -244,7 +255,7 @@ class Models:
                 ),
             }
         except ModelError as exc:
-            standby = os.getenv("REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b")
+            standby = self.standby
             if not standby or standby in self.names:
                 raise
             return {
@@ -259,7 +270,7 @@ class Models:
                 ),
             }
 
-    def call(self, model, instruction, data, max_tokens=4096):
+    def call(self, model, instruction, data, max_tokens=None):
         if not self.key:
             raise ModelError("model-unconfigured")
         with measured("model_call", model=model):
@@ -270,7 +281,7 @@ class Models:
             finally:
                 slot.release()
 
-    def _call(self, model, instruction, data, max_tokens=4096):
+    def _call(self, model, instruction, data, max_tokens=None):
         if not self.key:
             raise ModelError("model-unconfigured")
         if _RATE_LIMITED_UNTIL.get(model, 0) > time.monotonic():
@@ -278,7 +289,7 @@ class Models:
         payload = {
             "model": model,
             "temperature": 0,
-            "max_tokens": max_tokens,
+            "max_tokens": 4096 if max_tokens is None else min(max_tokens, 4096),
             "messages": [
                 {"role": "system", "content": instruction},
                 {"role": "user", "content": json.dumps(data)},
@@ -297,14 +308,24 @@ class Models:
                 "Authorization": "Bearer " + self.key,
             },
         )
-        for attempt in range(2):
+        retries = 1
+        for attempt in range(retries + 1):
             try:
                 with paced_open(req, timeout=60) as response:
                     with measured("provider_body", model=model, attempt=attempt):
                         raw = response.read(1000001)
                 if len(raw) > 1000000:
                     raise ModelError("model-response-size")
-                result = json.loads(raw)["choices"][0]
+                response_payload = json.loads(raw)
+                if not isinstance(response_payload, dict):
+                    raise ModelError("model-response-schema")
+                reported_model = response_payload.get("model")
+                if reported_model is not None and (
+                    not isinstance(reported_model, str)
+                    or reported_model.casefold() != model.casefold()
+                ):
+                    raise ModelError("model-response-identity")
+                result = response_payload["choices"][0]
                 if result["finish_reason"] != "stop":
                     raise ModelError("model-truncated")
                 parsed = json.loads(result["message"]["content"])
@@ -318,14 +339,14 @@ class Models:
                 exc.close()
                 if (
                     status not in (408, 429, 500, 502, 503, 504)
-                    or attempt
+                    or attempt >= retries
                     or delay > 60
                 ):
                     raise ModelError("model-http-" + str(status)) from None
                 with measured("retry_wait", model=model, attempt=attempt):
                     time.sleep(delay)
             except (TimeoutError, OSError, ValueError, TypeError, KeyError, IndexError):
-                if attempt:
+                if attempt >= retries:
                     raise ModelError("model-invalid-or-unavailable") from None
                 with measured("retry_wait", model=model, attempt=attempt):
                     time.sleep(1)
@@ -337,7 +358,7 @@ class Models:
             # Candidates retain complete sentences and exact source punctuation.
             units.extend(
                 exact_units(block)
-                if os.getenv("PRECISE_QUOTE_UNITS", "0") == "1"
+                if os.getenv("PRECISE_QUOTE_UNITS", "1") == "1"
                 else [
                     v.strip() for v in re.split(r"(?<=[.!?])(?=\s)", block) if v.strip()
                 ]
@@ -466,9 +487,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
                     if limitations:
                         # Parsing can use another extractor; factual checks still
                         # belong to this reviewer and preserve its actual identity.
-                        parser_model = os.getenv(
-                            "REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b"
-                        )
+                        parser_model = self.standby
                         if parser_model and parser_model != name:
                             assertions, limitations = self.extract(
                                 claim, names=[parser_model]
@@ -601,7 +620,7 @@ Do not force agreement or conclusiveness. If evidence is insufficient, abstain."
             passage_cache = (
                 query_cache
                 if query_cache is not None
-                and os.getenv("JOB_PASSAGE_CACHE", "0") == "1"
+                and os.getenv("JOB_PASSAGE_CACHE", "1") == "1"
                 else None
             )
             texts = [p["text"] for p in candidates]
@@ -729,12 +748,7 @@ standalone second assertion is not an exact quotation of that response."""
                 )
                 continue
             result = None
-            candidates = (
-                names
-                if names is not None
-                else self.names
-                + [os.getenv("REVIEW_FALLBACK_MODEL", "openai/gpt-oss-20b")]
-            )
+            candidates = names if names is not None else self.names + [self.standby]
             for name in dict.fromkeys(n for n in candidates if n):
                 request = {"response": chunk, "context": context}
                 for extraction_attempt in range(2):

@@ -108,8 +108,6 @@ class ReliabilityTests(unittest.TestCase):
     ):
         slot = Mock()
         slot.acquire.return_value = False
-        model = Models()
-        model.key = "synthetic-test-key"
         payload = {
             "label": "SUPPORTED",
             "reason": "Direct source statement.",
@@ -127,22 +125,21 @@ class ReliabilityTests(unittest.TestCase):
         ).encode()
         with (
             patch.dict("verifai.model._MODEL_SLOTS", {"queue-fallback-control": slot}),
-            patch.dict(
-                "verifai.model.os.environ",
-                {"REVIEW_FALLBACK_MODEL": "queue-standby-control"},
-            ),
             patch("verifai.model.paced_open", return_value=io.BytesIO(raw)) as opened,
         ):
+            model = Models()
+            model.key = "synthetic-test-key"
             result = model.review(
                 "queue-fallback-control", "The lake is blue.", "The lake is blue."
             )
-        self.assertEqual(result["model"], "queue-standby-control")
+        self.assertEqual(result["model"], "openai/gpt-oss-20b")
         self.assertEqual(result["requested_model"], "queue-fallback-control")
         self.assertEqual(result["fallback_reason"], "model-queue-timeout")
         self.assertEqual(result["label"], "SUPPORTED")
         self.assertEqual(opened.call_count, 1)
         self.assertEqual(
-            json.loads(opened.call_args.args[0].data)["model"], "queue-standby-control"
+            json.loads(opened.call_args.args[0].data)["model"],
+            "openai/gpt-oss-20b",
         )
         slot.release.assert_not_called()
 

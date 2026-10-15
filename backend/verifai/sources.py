@@ -83,7 +83,7 @@ def document(url):
     raw = result["body"].decode("utf-8", errors="replace")
     if result["content_type"] == "text/html":
         parser = (
-            PreciseText() if os.getenv("PRECISE_SOURCE_BLOCKS", "0") == "1" else Text()
+            PreciseText() if os.getenv("PRECISE_SOURCE_BLOCKS", "1") == "1" else Text()
         )
         parser.feed(raw)
         text = (

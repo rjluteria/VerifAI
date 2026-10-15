@@ -921,9 +921,7 @@ class EngineTests(unittest.TestCase):
                     }
                 ).encode()
             )
-            with patch(
-                "verifai.model.urllib.request.urlopen", return_value=response
-            ) as call:
+            with patch("verifai.model.paced_open", return_value=response) as call:
                 self.assertEqual(model.call(name, "instruction", {}), {})
             request = call.call_args.args[0]
             payload = json.loads(request.data)

@@ -236,7 +236,7 @@ class NetworkTests(unittest.TestCase):
 
         with patch("verifai.sources.fetch", side_effect=response):
             doc = document("https://example.org/trial")
-        self.assertIn("positive.\nOnly adults", doc["text"])
+        self.assertRegex(doc["text"], r"positive\.\n+Only adults")
 
     def test_login_wall_not_supporting_evidence(self):
         def response(url, **kwargs):

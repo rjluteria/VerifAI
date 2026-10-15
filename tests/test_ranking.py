@@ -32,7 +32,10 @@ class RankingTests(unittest.TestCase):
                 ).encode()
             )
 
-        with patch("verifai.model.paced_open", side_effect=response):
+        with (
+            patch.dict("os.environ", {"JOB_PASSAGE_CACHE": "0"}),
+            patch("verifai.model.paced_open", side_effect=response),
+        ):
             cache = {}
             first = models.rank_cached("A claim.", candidates, cache)
             second = models.rank_cached("A claim.", candidates, cache)

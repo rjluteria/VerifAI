@@ -2,8 +2,10 @@ import copy
 import hashlib
 import os
 import re
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from contextvars import copy_context
 from decimal import ROUND_HALF_UP, Decimal
 from urllib.parse import urlsplit
@@ -325,7 +327,7 @@ def classify(models, claim, evidence, _unit_math=True, reference_cache=None):
             "reason": "No reviewable evidence was selected for this check.",
             "quotes": [],
         }
-    if _unit_math and os.getenv("GROUNDED_UNIT_ARITHMETIC", "0") == "1":
+    if _unit_math and os.getenv("GROUNDED_UNIT_ARITHMETIC", "1") == "1":
         plan = plan_conversion(claim, evidence)
         if plan:
             cache_key = (plan.reference_claim, evidence, tuple(models.names))
@@ -582,7 +584,9 @@ class Engine:
         independent_urls = set()
         # Only this verification owns these query vectors; no cross-job persistence.
         query_cache = {}
-        reference_cache = {} if os.getenv("JOB_REFERENCE_CACHE", "0") == "1" else None
+        ranking_lock = threading.Lock()
+        reference_lock = threading.RLock()
+        reference_cache = {} if os.getenv("JOB_REFERENCE_CACHE", "1") == "1" else None
 
         def independent_counts():
             # Count actual selected URL checks, not search snippets or originals.
@@ -676,7 +680,7 @@ class Engine:
 
         progress("Checking citations")
         first_discovery = None
-        if claims and citations and os.getenv("PARALLEL_RETRIEVAL", "0") == "1":
+        if claims and citations and os.getenv("PARALLEL_RETRIEVAL", "1") == "1":
             progress("Searching independent sources")
             # Only independent discovery overlaps citation transport. Join before
             # reviewing; the document cache has one transport owner throughout.
@@ -766,10 +770,99 @@ class Engine:
                         for error in errors
                         if error != "Independent discovery unavailable."
                     ]
+
+            def review_document(doc, url):
+                if time.monotonic() >= deadline:
+                    return (
+                        {
+                            "label": "UNVERIFIED",
+                            "quotes": [],
+                            "reason": "Evidence review time budget exhausted.",
+                            "failures": ["review-budget"],
+                        },
+                        [],
+                        [],
+                    )
+                candidates = passages(doc["text"], claim, limit=20)
+                cached_rank = getattr(self.models, "rank_cached", None)
+                with (
+                    ranking_lock,
+                    measured(
+                        "ranking",
+                        count=len(candidates),
+                        source_id=source_ids[url],
+                        claim_id=claim_id,
+                    ),
+                ):
+                    selected = (
+                        cached_rank(claim, candidates, query_cache)
+                        if cached_rank
+                        else self.models.rank(claim, candidates)
+                    )
+                evidence = "\n\n".join(p["text"] for p in selected)
+                with (
+                    (
+                        reference_lock
+                        if reference_cache is not None
+                        and os.getenv("GROUNDED_UNIT_ARITHMETIC", "1") == "1"
+                        and plan_conversion(claim, evidence)
+                        else nullcontext()
+                    ),
+                    measured(
+                        "classification",
+                        source_id=source_ids[url],
+                        claim_id=claim_id,
+                    ),
+                ):
+                    verdict = classify(
+                        self.models,
+                        claim,
+                        evidence,
+                        reference_cache=reference_cache,
+                    )
+                snippets = quoted_snippets(verdict, selected)
+                if snippets is None:
+                    verdict = {
+                        "label": "UNVERIFIED",
+                        "reason": "Quotation crossed selected evidence boundaries.",
+                        "quotes": [],
+                        "failures": ["Selected quotations could not be validated."],
+                    }
+                    snippets = []
+                if (
+                    os.getenv("REJECT_MASS_ALIASES", "1") == "1"
+                    and verdict["label"] != "UNVERIFIED"
+                    and is_mass_conversion(claim)
+                    and any(conflicting_mass_aliases(s["text"]) for s in snippets)
+                ):
+                    verdict = {
+                        **verdict,
+                        "label": "UNVERIFIED",
+                        "reason": "Selected evidence contains inconsistent mass-unit aliases.",
+                        "quotes": [],
+                    }
+                    verdict.pop("quote_spans", None)
+                    snippets = []
+                return verdict, snippets, selected
+
             tracks = {"citation": [], "independent": []}
             content_origins = {}
             destination_origins = {}
             reviewed_content = {}
+            concurrency = getattr(self.models, "source_review_concurrency", 1)
+            if concurrency > 1:
+                # Deduplicate exact content before admission. Only this coordinator
+                # mutates result maps, preserving URL order and both evidence tracks.
+                pending_reviews = {}
+                with ThreadPoolExecutor(max_workers=min(2, concurrency)) as pool:
+                    for url in urls[: max(0, check_budget - checked)]:
+                        doc = source(url)
+                        if doc["accessible"] and doc["text"] not in pending_reviews:
+                            pending_reviews[doc["text"]] = pool.submit(
+                                copy_context().run, review_document, doc, url
+                            )
+                    for content, future in pending_reviews.items():
+                        reviewed_content[content] = future.result()
             for url in urls:
                 if time.monotonic() >= deadline:
                     errors.append(
@@ -799,58 +892,7 @@ class Engine:
                     if doc["text"] in reviewed_content:
                         verdict, snippets, selected = reviewed_content[doc["text"]]
                     else:
-                        candidates = passages(doc["text"], claim, limit=20)
-                        cached_rank = getattr(self.models, "rank_cached", None)
-                        with measured(
-                            "ranking",
-                            count=len(candidates),
-                            source_id=source_ids[url],
-                            claim_id=claim_id,
-                        ):
-                            selected = (
-                                cached_rank(claim, candidates, query_cache)
-                                if cached_rank
-                                else self.models.rank(claim, candidates)
-                            )
-                        evidence = "\n\n".join(p["text"] for p in selected)
-                        with measured(
-                            "classification",
-                            source_id=source_ids[url],
-                            claim_id=claim_id,
-                        ):
-                            verdict = classify(
-                                self.models,
-                                claim,
-                                evidence,
-                                reference_cache=reference_cache,
-                            )
-                        snippets = quoted_snippets(verdict, selected)
-                        if snippets is None:
-                            verdict = {
-                                "label": "UNVERIFIED",
-                                "reason": "Quotation crossed selected evidence boundaries.",
-                                "quotes": [],
-                                "failures": [
-                                    "Selected quotations could not be validated."
-                                ],
-                            }
-                            snippets = []
-                        if (
-                            os.getenv("REJECT_MASS_ALIASES", "0") == "1"
-                            and verdict["label"] != "UNVERIFIED"
-                            and is_mass_conversion(claim)
-                            and any(
-                                conflicting_mass_aliases(s["text"]) for s in snippets
-                            )
-                        ):
-                            verdict = {
-                                **verdict,
-                                "label": "UNVERIFIED",
-                                "reason": "Selected evidence contains inconsistent mass-unit aliases.",
-                                "quotes": [],
-                            }
-                            verdict.pop("quote_spans", None)
-                            snippets = []
+                        verdict, snippets, selected = review_document(doc, url)
                         reviewed_content[doc["text"]] = (verdict, snippets, selected)
                     result = {
                         "url": url,

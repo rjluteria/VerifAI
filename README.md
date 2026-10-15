@@ -2,15 +2,13 @@
 
 VerifAI checks factual claims in completed ChatGPT responses against the response's citations and separately discovered web sources. It is a Chrome Manifest V3 extension with a Python REST service intended for Render.
 
-This is a development build. A Supported result means retrieved evidence supports the assertion under the implemented checks. It does not guarantee factual truth. Unknown facts, unavailable sources, conflicting sources and reviewer disagreement remain Unverified. Unverified does not mean false.
-
 VerifAI puts the evidence beside each assertion so readers can inspect what supports it, what conflicts with it, and what remains unresolved.
 
-The active release target, approved on 14 October 2026, is complete visible results within 30 seconds for every preregistered healthy, warm, fresh verification. Accuracy, evidence, provenance, privacy and security requirements remain in force. Cold and degraded cohorts are separately measured and disclosed. The target never causes an automatic Unverified verdict or fabricated completion. This development build has not qualified the new target or public release.
+The end-to-end target remains 30 seconds for healthy, warm, fresh verification. The current acceptance scope permits model/provider-caused accuracy and latency limitations when measurements distinguish them from application defects. It does not waive retrieval, parsing, quote integrity, source provenance, privacy or security. Cold and degraded conditions remain separate. The target never causes a fabricated verdict or completion. Public publication still requires approval; no universal accuracy or timing guarantee is made.
 
 The retained 0.1.12 native baseline completed 19 fresh warm jobs: 17/19 response arrays and 25/27 eligible claims matched frozen gold. Median completion was 158.048 seconds, maximum 541.438 seconds, with zero five-second successes. Those historical results remain unchanged. Cached restores are separate from fresh verification.
 
-The 0.1.15 development panel presents actual job stages, elapsed time, a 30-second warm target, pending overruns and final result counts. Progress is a versioned, content-free snapshot from the existing owner-protected job endpoint; the old transport remains compatible. Experimental quotation, source-block, unit-arithmetic and per-job embedding-cache changes remain disabled by default until qualified. Native integration and release acceptance are pending. Panel ownership is reconciled on tab/window/visibility changes and periodically, including when a storage notification is missed.
+The 0.1.18 panel presents actual job stages, elapsed time, a 30-second warm target, pending overruns and final result counts. Progress is a versioned, content-free snapshot from the existing owner-protected job endpoint; the old transport remains compatible. Precise quotation/source boundaries, grounded unit arithmetic, alias rejection and per-job embedding caches are enabled by default. Source reviews run with bounded parallelism and exact-content deduplication; JSON controls reviewer/source concurrency. Historical acceptance records remain available and are not relabeled as new successes. Panel ownership is reconciled on tab/window/visibility changes and periodically, including when a storage notification is missed.
 
 | Status              | Meaning                                                                                                              |
 | ------------------- | -------------------------------------------------------------------------------------------------------------------- |
@@ -76,8 +74,6 @@ python scripts/package.py
 docker build -t verifai .
 ```
 
-Python can be invoked as `py -3` on Windows. The package script writes an installable extension ZIP under `dist/`. The packaged endpoint is configured in `extension/config.js`; old saved endpoint overrides are removed and cannot redirect requests. Developers can build a separate test ZIP with `python scripts/package.py --backend-origin https://your-test-service.onrender.com --output dist/test.zip`. This changes only that package and its exact optional host permission, not user preferences or tracked configuration. Configure the test service to allow that extension origin before using it. CI defines Linux, macOS and Windows checks and a container build. Publishing or merely defining that workflow does not establish that remote checks ran.
-
 A developer test ZIP can enable visible-render measurements with `python scripts/package.py --benchmark-timing --output dist/timing-test.zip`. Normal packages always disable this instrument. The content script or Re-verify panel records dispatch before messaging the worker, so the measurement includes worker wakeup, session acquisition and submission. The visible side panel records completion after rendering all result cards and two animation frames. Keep the panel visible before completion. Cached restoration and incomplete results are labelled separately; this instrument does not establish source freshness or a five-second performance guarantee.
 
 Optional model evaluation (requires a locally configured `NVIDIA_API_KEY`). Keep result files outside the repository; they contain full model reasons and are local evaluation artifacts:
@@ -109,3 +105,4 @@ A closed, internally consistent count partition compares adult or juvenile count
 Four separate [measurement-conflict controls](evaluations/measurement-conflicts.json) preserve unresolved-conflict, correction, shared-contradiction and unit-conversion boundaries. They supplement the frozen regression corpus; all four passed in the current focused evaluation, with manually checked final proof contexts. Individual reviewers can still err; these controls do not establish universal accuracy.
 
 Progress reports actual independent source URL checks as they are acquired, including unavailable checks. A repeated URL across claims counts once per job. These counts describe selected URL checks, not distinct original sources or independent corroboration.
+
