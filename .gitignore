@@ -7,3 +7,9 @@ __pycache__/
 dist/
 node_modules/
 .DS_Store
+
+# Local release evidence and tooling caches are not source distribution files.
+outputs/
+private/
+.venv/
+.ruff_cache/
