@@ -172,8 +172,16 @@ async function api(path, options = {}, submission) {
   }
   return response.json();
 }
-async function store(key, value, guarded = false) {
+async function store(key, value, guarded = false, expectedSelection) {
   return serialized(async () => {
+    if (expectedSelection) {
+      const current = await chrome.storage.session.get(["selected", key]);
+      if (
+        current.selected !== key ||
+        (current[key]?.runId || null) !== expectedSelection.runId
+      )
+        return false;
+    }
     if (
       guarded &&
       (await chrome.storage.session.get(key))[key]?.runId !== value.runId
@@ -213,6 +221,7 @@ async function store(key, value, guarded = false) {
           : "History could not be saved or cleared. Check Settings and try again.",
       });
     }
+    return true;
   });
 }
 async function publish(key, value, text) {
@@ -512,9 +521,11 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
     }
     if (message.type === "details") {
       if (!(await active(sender))) return { error: "ineligible" };
-      await chrome.storage.session.set({
-        selected: "response:" + sender.tab.id + ":" + message.id,
-      });
+      await serialized(() =>
+        chrome.storage.session.set({
+          selected: "response:" + sender.tab.id + ":" + message.id,
+        }),
+      );
       return { ok: true };
     }
     if (message.type === "panel-context") {
@@ -530,6 +541,8 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       return {
         eligible: Boolean(value) && (await submissionActive(value)),
         on: Boolean(on),
+        selected,
+        runId: value?.runId || null,
       };
     }
     if (
@@ -579,6 +592,15 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
       const benchmark = benchmarkStart(message);
       const { selected } = await chrome.storage.session.get("selected");
       const old = (await chrome.storage.session.get(selected || ""))[selected];
+      if (
+        typeof message.responseKey !== "string" ||
+        message.responseKey !== selected ||
+        !Object.hasOwn(message, "expectedRunId") ||
+        message.expectedRunId !== (old?.runId || null)
+      )
+        return {
+          error: "The displayed response changed. Reopen its details first.",
+        };
       if (!old?.text)
         return { error: "Reopen the corresponding response first." };
       if (!(await submissionActive(old)))
@@ -611,7 +633,10 @@ chrome.runtime.onMessage.addListener((message, sender, respond) => {
         retry: false,
         stage: "Analyzing claims",
       };
-      await store(selected, value);
+      if (!(await store(selected, value, false, { runId: old.runId || null })))
+        return {
+          error: "The displayed response changed. Reopen its details first.",
+        };
       try {
         await chrome.tabs.sendMessage(value.tab, {
           type: "verification-started",

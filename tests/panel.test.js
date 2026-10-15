@@ -94,7 +94,13 @@ async function setup({
       async sendMessage(value) {
         if (value.type !== "panel-context")
           messages.push(structuredClone(value));
-        return value.type === "panel-context" ? panelContext : { ok: true };
+        return value.type === "panel-context"
+          ? {
+              selected: data.selected,
+              runId: data[data.selected]?.runId || null,
+              ...panelContext,
+            }
+          : { ok: true };
       },
     },
   };
@@ -158,7 +164,9 @@ test("panel retains selection when unrelated results change and reverify is expl
   assert.equal(f.messages.length, 0);
   f.dom.window.document.querySelector("#reverify").click();
   await new Promise((resolve) => setImmediate(resolve));
-  assert.deepEqual(f.messages, [{ type: "reverify" }]);
+  assert.deepEqual(f.messages, [
+    { type: "reverify", responseKey: "first", expectedRunId: null },
+  ]);
   f.data.selected = "second";
   await f.listeners[0]();
   assert.match(
@@ -166,6 +174,28 @@ test("panel retains selection when unrelated results change and reverify is expl
     /No verifiable claims/,
   );
   assert.equal(f.opened.length, 0);
+});
+
+test("reverify binds to rendered response even if selection changes before click", async () => {
+  const f = await setup();
+  f.data.selected = "other";
+  f.dom.window.document.querySelector("#reverify").click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(f.messages, [
+    { type: "reverify", responseKey: "first", expectedRunId: null },
+  ]);
+});
+
+test("panel refuses results when ownership check refers to another selection", async () => {
+  const f = await setup({
+    panelContext: { eligible: true, on: true, selected: "other", runId: null },
+  });
+  assert.equal(f.dom.window.document.querySelector("#results").textContent, "");
+  assert.equal(f.dom.window.document.querySelector("#reverify").disabled, true);
+  assert.match(
+    f.dom.window.document.querySelector("#stage").textContent,
+    /owning response/,
+  );
 });
 
 test("developer clock waits for complete visible rendering and preserves its first measurement", async () => {

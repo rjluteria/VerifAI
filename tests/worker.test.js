@@ -262,7 +262,11 @@ test("Re-verify preserves a result when its chat is inactive or verification is 
       },
     });
     const answer = await f.send(
-      { type: "reverify" },
+      {
+        type: "reverify",
+        responseKey: "response:1:message",
+        expectedRunId: null,
+      },
       { url: "chrome-extension://test/panel.html" },
     );
     assert.match(answer.error, /corresponding ChatGPT chat/);
@@ -809,7 +813,7 @@ test("developer timing distinguishes fresh verification, restoration and Re-veri
   f.chrome.storage.session.data.selected = key;
   const restoreRun = stored.benchmarkRun;
   await f.send(
-    { type: "reverify" },
+    { type: "reverify", responseKey: key, expectedRunId: stored.runId || null },
     { url: "chrome-extension://test/panel.html" },
   );
   stored = f.chrome.storage.session.data[key];
@@ -992,7 +996,7 @@ test("a superseded session failure cannot publish stale progress for a newer Re-
   const key = "response:1:message";
   f.chrome.storage.session.data.selected = key;
   await f.send(
-    { type: "reverify" },
+    { type: "reverify", responseKey: key, expectedRunId: first.runId },
     { url: "chrome-extension://test/panel.html" },
   );
   await new Promise((resolve) => setImmediate(resolve));
@@ -1127,6 +1131,109 @@ test("panel context is owner-bound and rejects a content-page sender", async () 
     {
       eligible: false,
       on: false,
+      selected: key,
+      runId: null,
     },
   );
+});
+
+test("reverify rejects stale displayed response or run without submitting", async () => {
+  const key = "response:1:current";
+  const value = {
+    id: "current",
+    revision: "a".repeat(64),
+    tab: 1,
+    url: "https://chatgpt.com/c/test",
+    text: "Current fact.",
+    runId: "current-run",
+    result: { claims: [] },
+  };
+  const f = await setup({ session: { on: true, selected: key, [key]: value } });
+  for (const message of [
+    { type: "reverify" },
+    {
+      type: "reverify",
+      responseKey: "response:1:previous",
+      expectedRunId: "current-run",
+    },
+    { type: "reverify", responseKey: key, expectedRunId: "previous-run" },
+  ]) {
+    const answer = await f.send(message, {
+      url: "chrome-extension://test/panel.html",
+    });
+    assert.match(answer.error, /displayed response changed/);
+  }
+  assert.deepEqual(f.chrome.storage.session.data[key], value);
+  assert.equal(f.calls.length, 0);
+});
+
+test("selection changing during eligibility check cancels reverify before storing or submitting", async () => {
+  const key = "response:1:current";
+  let f;
+  f = await setup({
+    session: {
+      on: true,
+      selected: key,
+      [key]: {
+        id: "current",
+        revision: "a".repeat(64),
+        tab: 1,
+        url: "https://chatgpt.com/c/test",
+        text: "Current fact.",
+        runId: "current-run",
+        result: { claims: [] },
+      },
+    },
+    eligibility: () => {
+      f.chrome.storage.session.data.selected = "response:1:other";
+      return true;
+    },
+  });
+  const answer = await f.send(
+    { type: "reverify", responseKey: key, expectedRunId: "current-run" },
+    { url: "chrome-extension://test/panel.html" },
+  );
+  assert.match(answer.error, /displayed response changed/);
+  assert.equal(f.chrome.storage.session.data[key].runId, "current-run");
+  assert.ok(f.chrome.storage.session.data[key].result);
+  assert.equal(f.calls.length, 0);
+});
+
+test("concurrent duplicate reverify messages admit only one new run", async () => {
+  const key = "response:1:current";
+  const f = await setup({
+    session: {
+      on: true,
+      selected: key,
+      [key]: {
+        id: "current",
+        revision: "a".repeat(64),
+        tab: 1,
+        url: "https://chatgpt.com/c/test",
+        text: "Current fact.",
+        runId: "old-run",
+        result: { claims: [] },
+      },
+    },
+    fetcher: async () => new Promise(() => {}),
+  });
+  const message = {
+    type: "reverify",
+    responseKey: key,
+    expectedRunId: "old-run",
+  };
+  const sender = { url: "chrome-extension://test/panel.html" };
+  const answers = await Promise.all([
+    f.send(message, sender),
+    f.send(message, sender),
+  ]);
+  assert.equal(answers.filter((answer) => answer.ok).length, 1);
+  assert.equal(
+    answers.filter((answer) => /displayed response changed/.test(answer.error))
+      .length,
+    1,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(f.calls.filter((call) => call === "fetch").length, 1);
+  assert.equal(f.chrome.storage.session.data[key].runSequence, 1);
 });

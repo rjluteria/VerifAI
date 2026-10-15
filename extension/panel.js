@@ -27,6 +27,7 @@ let last = "";
 let renderGeneration = 0;
 const benchmarkRenders = new Map();
 let timerData;
+let displayedResponse;
 const stageLabels = {
   claims: "Identifying factual claims",
   citations: "Checking ChatGPT citations",
@@ -78,9 +79,14 @@ async function render() {
       .sendMessage({ type: "panel-context" })
       .catch(() => ({}));
     if (generation !== renderGeneration) return;
-    if (context.eligible !== true) {
+    if (
+      context.eligible !== true ||
+      context.selected !== selected ||
+      context.runId !== (data.runId || null)
+    ) {
       last = "";
       timerData = undefined;
+      displayedResponse = undefined;
       document.querySelector("#results").replaceChildren();
       document.querySelector("#progress")?.replaceChildren();
       document.querySelector("#reverify").disabled = true;
@@ -101,6 +107,9 @@ async function render() {
   const fingerprint = JSON.stringify([selected, data, storageNotice]);
   if (fingerprint === last) return;
   last = fingerprint;
+  displayedResponse = data
+    ? { responseKey: selected, expectedRunId: data.runId || null }
+    : undefined;
   timerData = data
     ? {
         ...data,
@@ -404,8 +413,10 @@ async function render() {
   }
 }
 document.querySelector("#reverify").addEventListener("click", async () => {
+  if (!displayedResponse) return;
   const result = await chrome.runtime.sendMessage({
     type: "reverify",
+    ...displayedResponse,
     ...(BENCHMARK_TIMING
       ? { benchmarkStartedAt: Date.now(), benchmarkClock: "wall-clock-v3" }
       : {}),
