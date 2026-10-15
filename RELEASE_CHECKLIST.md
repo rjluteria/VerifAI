@@ -16,13 +16,15 @@ The repository stays private. History cleanup was authorized and verified; publi
 - [x] Owner authorized history cleanup; only the affected release branch was rewritten.
 - [x] Remote history replaced and verified from a fresh clone; unrelated branches remain intact.
 - [x] Cleaned implementation passed Linux, macOS, Windows and container CI; the accompanying report identifies the final documentation revision and its CI.
-- [ ] Fixed-model source deployed to the existing hosted service and fresh verification measured.
+- [x] Tested fixed-model source deployed to the existing free service; real hosted verification passed before and after removing obsolete settings (146.340 s and 29.860 s). Credentials, session secrets, permissions and plan were not changed.
+- [x] Fresh native Chrome Re-verify returned the expected Supported verdict in UI-reported 97.2 s; progress and continuing overrun were observed. Both supporting source destinations opened with the relevant text.
+- [x] Seven explicitly approved obsolete CI runs were deleted and verified absent; retained old host caches are disclosed separately.
 - [x] Extension ZIP, cleaned source archive and SHA256SUMS generated and validated after history cleanup; final revision/hashes appear in the accompanying report.
 - [ ] Separate final publication approval obtained.
 
 ## Native checks and limitations
 
-Prior existing-profile Chrome installation, side-panel/source access and fresh progress/overrun results are retained as historical evidence. They do not certify a new deployment. A fresh install starts Off and history starts Off according to automated regression coverage.
+Existing-profile Chrome restored Cached results after reopening ChatGPT. A new Re-verify then exercised the cleaned hosted deployment, including side-panel ownership, progress/elapsed/overrun, correct final verdict and supporting links. This is distinct from a clean-profile installation. A fresh install starts Off and history starts Off according to automated regression coverage.
 
 - [ ] **MANUAL REQUIRED:** clean-profile installation, service permission, initial Off, enable/disable, unsupported-site pause and side-panel operation.
 - [ ] **MANUAL REQUIRED:** native history enable/retention/clear/disable; earlier user-confirmed controls are separate evidence.
