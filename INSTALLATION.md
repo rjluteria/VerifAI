@@ -8,7 +8,7 @@ VerifAI 0.1.19 uses the existing hosted backend. Users do not obtain API keys, s
 2. Extract the ZIP into a stable folder. The archive is flat: `manifest.json` is at its root.
 3. Open `chrome://extensions` in Chrome 120+, enable Developer mode and select **Load unpacked**.
 4. Select the extracted folder containing `manifest.json` and confirm version 0.1.19.
-5. For a new installation, ask the existing service operator to allow its exact extension ID. Unpacked installations can have different IDs; this operator provisioning is required, but users do not configure a backend.
+5. Confirm the official package ID is `klpailadffhphldajafnenkidikkfpan`. The packaged public identity keeps this ID consistent across folders/profiles. The hosted service authorizes this exact origin once; users do not request backend access or edit server settings.
 6. Open VerifAI Settings, keep history Off initially, save and approve Chrome's requested access to the existing hosted service.
 7. Open ChatGPT, sign in normally and enable verification through VerifAI's control. A new installation starts Off.
 8. Ask for a response containing factual claims. Select **View details** to inspect progress, verdicts, quotations and source links. **Re-verify** starts a fresh check; Cached results retain their original evidence.
@@ -30,3 +30,7 @@ The existing service retains server-side NVIDIA_API_KEY, SESSION_SECRET and opti
 ## Rollback
 
 Use an approved fixed-model source revision from the cleaned release history and its matching extension package. Redeploy the existing service with its existing secret-store values; never restore an abandoned implementation. Restore extension files in the same folder, reload and refresh ChatGPT. Confirm `/health`, then enable verification normally and run a synthetic fresh Re-verify. A cached result does not establish backend recovery. Publication and remote history changes require separate owner approval.
+
+## Package identity
+
+The manifest contains a public identity value, not a secret/API credential. It fixes the official unpacked package ID across installations. The backend continues to allow only explicitly registered origins and signed owner-bound sessions; it does not accept arbitrary extension IDs or websites. A future Chrome Web Store distribution must be checked against its assigned identity before publication.

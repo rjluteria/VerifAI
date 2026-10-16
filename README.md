@@ -42,7 +42,7 @@ The normal ZIP is a flat extension package: `manifest.json` and the other extens
 3. Open `chrome://extensions` in Chrome 120 or newer.
 4. Enable **Developer mode** and select **Load unpacked**.
 5. Select the extracted folder containing `manifest.json`; confirm version 0.1.19.
-6. Have the service operator allow this installation's exact extension origin. Each installation/profile may have a different extension ID. The operator sets `ALLOWED_ORIGINS=chrome-extension://YOUR_EXTENSION_ID`; multiple origins are comma-separated. Settings displays the installation's service origin identifier.
+6. The official ZIP has the stable extension ID `klpailadffhphldajafnenkidikkfpan`, registered once with the hosted service. New users do not request individual backend access. Keep the supplied public identity in `manifest.json`; it is not an API key.
 7. Open VerifAI's **Settings**, leave history Off initially, and select **Save settings**. Approve access to the configured hosted service when Chrome prompts. Missing host permission or a missing server allowlist entry prevents connection; the ZIP cannot preauthorize a new installation.
 8. Open ChatGPT, sign in normally if needed, and open VerifAI's control. Turn **Enable verification** On. It starts Off on a new installation.
 9. Ask ChatGPT for a response containing factual claims. VerifAI checks eligible completed assistant responses while the supported tab is active.
@@ -76,7 +76,7 @@ Provider credentials stay server-side. Restricted permissions, signed-session ow
 
 | Problem | What to check |
 | --- | --- |
-| Verification does not start | Enable verification, grant service access in Settings, confirm the server allowlists this extension ID, activate a supported ChatGPT tab and wait for the assistant response to finish. Refresh ChatGPT after updating/reloading the extension. |
+| Verification does not start | Enable verification, grant service access in Settings, confirm the official ZIP identity is intact, activate a supported ChatGPT tab and wait for the assistant response to finish. Refresh ChatGPT after updating/reloading the extension. |
 | Remains Paused | Return to the supported active tab and owning response. Off must be switched On through the normal control. Unsupported websites never activate verification. |
 | Backend connection failure | Check permissions, allowlisted origin, `/health`, network and free-host wake-up. Only the operator can fix service credentials. |
 | Long verification | Inspect actual progress; the 30-second target is not a timeout that fabricates a verdict. Provider timeouts/retries and source acquisition can take minutes. |

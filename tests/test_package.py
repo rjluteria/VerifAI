@@ -1,3 +1,5 @@
+import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -70,3 +72,30 @@ class PackageTests(unittest.TestCase):
                     # Packaging must decode UTF-8 even on Windows code pages.
                     self.assertIn("”", archive.read("content.js").decode("utf-8"))
         self.assertEqual((root / "extension/config.js").read_bytes(), original)
+
+    def test_release_identity_is_stable_and_packaged_without_private_key(self):
+        root = Path(__file__).resolve().parents[1]
+        manifest = json.loads((root / "extension/manifest.json").read_text())
+        public = base64.b64decode(manifest["key"], validate=True)
+        identity = "".join(
+            chr(ord("a") + int(c, 16)) for c in hashlib.sha256(public).hexdigest()[:32]
+        )
+        self.assertEqual(identity, "klpailadffhphldajafnenkidikkfpan")
+        with tempfile.TemporaryDirectory() as folder:
+            output = Path(folder) / "release.zip"
+            subprocess.run(
+                [
+                    sys.executable,
+                    str(root / "scripts/package.py"),
+                    "--output",
+                    str(output),
+                ],
+                check=True,
+                capture_output=True,
+            )
+            with ZipFile(output) as archive:
+                self.assertEqual(
+                    json.loads(archive.read("manifest.json"))["key"], manifest["key"]
+                )
+                for name in archive.namelist():
+                    self.assertNotIn(b"PRIVATE KEY", archive.read(name))

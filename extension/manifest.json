@@ -26,5 +26,6 @@
   "options_page": "settings.html",
   "content_security_policy": {
     "extension_pages": "script-src 'self'; object-src 'none'"
-  }
+  },
+  "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAl1Li7+K5C5fKZd2iTMHw8LlXKsrbh9cn+eNlaLInnlXlyrSgJRZo0ICx1Mae9MwVgueo1ijUA4YVTdux3GsXiZutVMPB+hhsTMOn2FY6QQV0ijDTSPWtReJAmAhTlWJeAwxGPjJaz3GV3a8dA9E18qWrnHh2xQp76+n6UfLldBP1XB2CcbqWZax1Kgrcp2/tJDRi+6kLnnaqTSB0clXB9vpYi9yStpAuFfn6vlFRW5zg45gqAvMRvnvnQoajLHArPzsDWlclbxXwZRJeMn7jri4+XV4nIpkE09f+GbaACe3Anhl9TR2Unvemu4YEA7OZz0uxWEpcB9bTkgz/XcqzRwIDAQAB"
 }
